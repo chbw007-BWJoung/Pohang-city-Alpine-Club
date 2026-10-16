@@ -355,7 +355,10 @@
     const c = curTrip.clubs || {};
     alert(`예약 신청이 접수되었습니다.\n입금 금액: ${won(data.amount, '담당자에게 문의')}\n입금 계좌: ${c.bank_account ? `${c.bank_name} ${c.bank_account} (${c.bank_holder})` : '담당자에게 문의'}\n입금 기한: ${fmt(data.expires_at)}\n\n입금이 확인되면 좌석이 확정되고, 기한이 지나면 가배정이 자동으로 풀립니다.`);
     ['mainUserName', 'phone', 'depositor'].forEach((id) => ($(id).value = ''));
-    loadSeats();
+    $('seatSection').classList.add('hidden');
+curTrip = null; curBusId = null; picked = []; people = [];
+window.scrollTo({ top: 0, behavior: 'smooth' });
+loadTrips();
   });
 
   /* ================= 관리자 ================= */
