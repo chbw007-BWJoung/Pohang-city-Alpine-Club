@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
   <style>
     body { font-family: 'Noto Sans KR', system-ui, sans-serif; background: #eef1ee; color: #1f2a24; }
     .card { background: #fff; border: 1px solid #e2e6e3; border-radius: .75rem; padding: 1.25rem; }
@@ -193,11 +194,9 @@
 </div>
 
 <script>
-  // ===== 설정: Supabase > Project Settings > API 값으로 교체하세요 =====
-  const SUPABASE_URL = ‘https://vuaxszhuitlsivihucfu.supabase.co’;
-  const SUPABASE_ANON_KEY = ‘sb_publishable_feEl5DjocmqBjgDdKCsVuQ_xCEz2Kqj’;
-  // ====================================================================
-  const configured = !SUPABASE_URL.startsWith('YOUR_') && !SUPABASE_ANON_KEY.startsWith('YOUR_');
+  // Supabase 연결 정보는 config.js에 입력합니다.
+  const { SUPABASE_URL = '', SUPABASE_ANON_KEY = '' } = window.APP_CONFIG || {};
+  const configured = /^https?:\/\//.test(SUPABASE_URL) && !!SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.startsWith('YOUR_');
   const db = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
   const MAX_PEOPLE = 4;
@@ -225,7 +224,7 @@
   /* ================= 방문자: 산행 선택 ================= */
   async function loadTrips() {
     const box = $('tripList');
-    if (!configured) { box.innerHTML = '<p class="text-sm text-red-600">index.html 위쪽의 SUPABASE_URL과 SUPABASE_ANON_KEY를 입력해주세요.</p>'; return; }
+    if (!configured) { box.innerHTML = '<p class="text-sm text-red-600">config.js 파일에 SUPABASE_URL과 SUPABASE_ANON_KEY를 입력해주세요.</p>'; return; }
     const { data, error } = await db.from('trips').select('id, title, trip_date, fee_regular, fee_guest, notice_url, pay_mode, club_id, clubs(name, bank_name, bank_account, bank_holder), buses(id, bus_no, vehicle_type)')
       .gte('trip_date', new Date(Date.now() - 864e5).toISOString()).order('trip_date');
     if (error) { box.innerHTML = `<p class="text-sm text-red-600">불러오지 못했습니다: ${esc(error.message)}</p>`; return; }
