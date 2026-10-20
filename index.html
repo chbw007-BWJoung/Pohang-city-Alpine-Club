@@ -51,6 +51,7 @@
 
   <!-- 좌석 선택 -->
   <section id="seatSection" class="card hidden">
+    <button id="backBtn" type="button" class="btn line sm mb-3">← 산행 목록으로 돌아가기</button>
     <div class="flex justify-between items-start gap-3 mb-2">
       <h2 class="text-lg font-bold">좌석 선택 <span class="text-sm font-normal text-gray-500">(최대 4명)</span></h2>
       <span id="selectedTripTitle" class="text-sm font-medium text-right" style="color:#2c6e8f"></span>
@@ -83,7 +84,7 @@
         <div id="people" class="space-y-2"></div>
         <p class="text-sm mt-2">예상 입금액: <strong id="estimate">-</strong></p></div>
       <label class="flex items-start gap-2 text-xs text-gray-600"><input id="consent" type="checkbox" class="mt-0.5"><span>[필수] 산행 신청 접수, 입금 확인, 안내 문자 발송을 위해 이름·연락처·입금자명을 수집·이용하는 것에 동의합니다.</span></label>
-      <button id="submitBtn" class="btn w-full py-3">예약 신청하기</button>
+      <div class="flex gap-2"><button id="submitBtn" class="btn flex-1 py-3">예약 신청하기</button><button id="cancelBtn" type="button" class="btn line py-3">신청 안 함</button></div>
     </div>
   </section>
 
@@ -370,6 +371,19 @@
     else picked.push(n);
     renderSeats();
   });
+
+  // 신청하지 않고 산행 목록으로 돌아가기
+  function backToList() {
+    const typed = ['mainUserName', 'phone', 'depositor'].some((id) => $(id).value.trim());
+    if ((picked.length || typed) && !confirm('입력한 내용이 사라집니다. 신청하지 않고 돌아갈까요?')) return;
+    closeSeatSection();
+    ['mainUserName', 'phone', 'depositor'].forEach((id) => ($(id).value = ''));
+    $('consent').checked = false;
+    renderTrips();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  $('backBtn').addEventListener('click', backToList);
+  $('cancelBtn').addEventListener('click', backToList);
 
   $('submitBtn').addEventListener('click', async () => {
     if (!curTrip || !curBusId) return alert('신청할 산행을 먼저 선택해 주세요. 해당하는 산행계획이 없으면 신청할 수 없습니다.');
