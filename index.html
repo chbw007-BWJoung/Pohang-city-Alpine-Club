@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>산악회 버스 예약</title>
+  <title>포항시 통합산행 신청</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
@@ -32,7 +32,7 @@
 
   <header class="rounded-xl p-5 flex justify-between items-center gap-3" style="background:#1d4034;color:#fff">
     <div>
-      <h1 class="text-xl sm:text-2xl font-bold">산악회 버스 예약</h1>
+      <h1 class="text-xl sm:text-2xl font-bold">포항시 통합산행 신청</h1>
       <p class="text-sm mt-1" style="color:#c9dccf">산행을 고르고 좌석을 정하세요. 회색 좌석(버스 1열, 승합·승용 운전석)은 선택할 수 없습니다.</p>
     </div>
     <button id="adminToggleBtn" class="shrink-0 px-3 py-2 rounded-lg text-sm font-medium border border-white/40 hover:bg-white/10">관리자</button>
@@ -46,7 +46,10 @@
       <select id="fYear" class="inp" aria-label="연도"><option value="">전체 연도</option></select>
       <select id="fMonth" class="inp" aria-label="월"><option value="">전체 월</option></select>
     </div>
-    <div id="tripList" class="grid grid-cols-1 sm:grid-cols-2 gap-3"><p class="text-gray-500 text-sm">산행 목록을 불러오는 중입니다.</p></div>
+    <label for="tripSelect" class="block text-sm font-medium mb-1">산행 (눌러서 선택)</label>
+    <select id="tripSelect" class="inp"><option value="">산행을 선택하세요</option></select>
+    <div id="tripList" class="text-sm text-gray-500 mt-2">산행 목록을 불러오는 중입니다.</div>
+    <div id="tripInfo" class="hidden mt-3 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm"></div>
   </section>
 
   <!-- 좌석 선택 -->
@@ -103,13 +106,21 @@
       </div>
 
       <div class="card">
-        <div class="flex justify-between items-center gap-2 flex-wrap mb-3">
-          <h2 class="text-lg font-bold">입금 확인과 명단</h2>
-          <div class="flex gap-2">
-            <select id="resTrip" class="inp !w-auto" aria-label="산행 필터"><option value="">전체 산행</option></select>
-            <button id="csvBtn" class="btn alt sm">CSV 저장</button>
-          </div>
+        <div class="flex justify-between items-center gap-2 mb-3">
+          <h2 class="text-lg font-bold">신청자 명단과 입금 확인</h2>
+          <button id="csvBtn" class="btn alt sm">CSV 저장</button>
         </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+          <select id="resClub" class="inp" aria-label="산악회 필터"><option value="">전체 산악회</option></select>
+          <select id="resTrip" class="inp" aria-label="산행 필터"><option value="">전체 산행</option></select>
+          <select id="resStatus" class="inp" aria-label="상태 필터">
+            <option value="">전체 상태</option><option value="pending">신청 (입금 대기)</option><option value="confirmed">입금완료 (확정)</option>
+            <option value="cancelled">취소</option><option value="expired">기한 만료</option></select>
+          <select id="resSort" class="inp" aria-label="정렬">
+            <option value="new">최신 신청순</option><option value="old">오래된 신청순</option>
+            <option value="name">신청자 이름순</option><option value="trip">산행 일자순</option></select>
+        </div>
+        <p id="resSummary" class="text-sm text-gray-600 mb-3"></p>
         <div class="overflow-x-auto">
           <table class="min-w-full text-sm">
             <thead class="bg-gray-50 text-left text-gray-500"><tr>
@@ -200,8 +211,9 @@
   const db = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
   const MAX_PEOPLE = 4;
-  const STATUS = { pending: ['입금 대기', 'bg-yellow-100 text-yellow-800'], confirmed: ['확정', 'bg-green-100 text-green-800'],
+  const STATUS = { pending: ['신청(입금 대기)', 'bg-yellow-100 text-yellow-800'], confirmed: ['입금완료', 'bg-green-100 text-green-800'],
                    cancelled: ['취소', 'bg-gray-200 text-gray-600'], expired: ['기한 만료', 'bg-orange-100 text-orange-800'] };
+  const statusLabel = (r) => (r.status === 'confirmed' && r.buses?.trips?.pay_mode === 'postpaid' ? '확정(후불)' : (STATUS[r.status] || [r.status])[0]);
   const KST = { timeZone: 'Asia/Seoul' };
   const $ = (id) => document.getElementById(id);
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -226,7 +238,7 @@
     const box = $('tripList');
     if (!configured) { box.innerHTML = '<p class="text-sm text-red-600">config.js 파일에 SUPABASE_URL과 SUPABASE_ANON_KEY를 입력해주세요.</p>'; return; }
     const { data, error } = await db.from('trips').select('id, title, trip_date, fee_regular, fee_guest, notice_url, pay_mode, club_id, clubs(name, bank_name, bank_account, bank_holder), buses(id, bus_no, vehicle_type)')
-      .gte('trip_date', new Date(Date.now() - 864e5).toISOString()).order('trip_date');
+      .gt('trip_date', new Date().toISOString())   // 출발 시각이 지난 산행은 제외.order('trip_date');
     if (error) { box.innerHTML = `<p class="text-sm text-red-600">불러오지 못했습니다: ${esc(error.message)}</p>`; return; }
     allTrips = data;
     const cs = [...new Map(data.map((t) => [t.club_id, t.clubs?.name])).entries()];
@@ -255,27 +267,45 @@
       + (safeUrl(t.notice_url) ? ` · <a href="${esc(safeUrl(t.notice_url))}" target="_blank" rel="noopener noreferrer" class="underline" style="color:#2c6e8f">산행공지 보기 ↗</a>` : '');
   };
 
+  const shortDate = (d) => new Date(d).toLocaleString('ko-KR', { ...KST, month: 'numeric', day: 'numeric', weekday: 'short', hour: 'numeric', minute: '2-digit' });
+
+  function tripInfoHtml(t) {
+    return `<span class="text-xs px-2 py-0.5 rounded font-medium" style="background:#dcebf2;color:#1f5670">${esc(t.clubs?.name)}</span>
+      <h3 class="font-bold mt-2">${esc(t.title)}</h3>
+      <p class="text-xs text-gray-500 mt-1">${esc(fmt(t.trip_date))}</p>
+      <p class="text-xs mt-1">정회원 <b>${won(t.fee_regular)}</b> · 일일회원 <b>${won(t.fee_guest)}</b>${t.pay_mode === 'postpaid' ? ' <span class="px-1.5 py-0.5 rounded text-xs" style="background:#e3efe6;color:#1d4034">후불·즉시 확정</span>' : ''}</p>
+      ${safeUrl(t.notice_url) ? `<a href="${esc(safeUrl(t.notice_url))}" target="_blank" rel="noopener noreferrer" class="inline-block mt-2 underline" style="color:#2c6e8f">산행공지 보기 ↗</a>` : ''}`;
+  }
+
+  function closeSeatSection() {
+    curTrip = null; curBusId = null; picked = []; people = []; seats = [];
+    $('seatSection').classList.add('hidden'); $('tripInfo').classList.add('hidden'); $('tripSelect').value = '';
+  }
+
   function renderTrips() {
     const c = $('fClub').value, y = $('fYear').value, m = $('fMonth').value;
     const list = allTrips.filter((t) => { const k = monthKey(t.trip_date);
       return (!c || String(t.club_id) === c) && (!y || k.startsWith(y)) && (!m || k.slice(5) === m); });
-    $('tripList').innerHTML = list.length ? list.map((t) => `
-      <div class="border border-gray-200 rounded-lg bg-gray-50 hover:border-[#2c6e8f]"><button type="button" data-trip-id="${t.id}" class="text-left w-full p-4">
-        <span class="text-xs px-2 py-0.5 rounded font-medium" style="background:#dcebf2;color:#1f5670">${esc(t.clubs?.name)}</span>
-        <h3 class="font-bold mt-2">${esc(t.title)}</h3>
-        <p class="text-xs text-gray-500 mt-1">${esc(fmt(t.trip_date))}</p>
-        <p class="text-xs mt-1">정회원 <b>${won(t.fee_regular)}</b> · 일일회원 <b>${won(t.fee_guest)}</b>${t.pay_mode === 'postpaid' ? ' <span class="px-1.5 py-0.5 rounded text-xs" style="background:#e3efe6;color:#1d4034">후불·즉시 확정</span>' : ''}</p>
-      </button>${safeUrl(t.notice_url) ? `<a href="${esc(safeUrl(t.notice_url))}" target="_blank" rel="noopener noreferrer" class="block px-4 pb-3 text-sm underline" style="color:#2c6e8f">산행공지 보기 ↗</a>` : ''}</div>`).join('') : '<p class="text-sm text-gray-500 sm:col-span-2">이 기간에 등록된 산행이 없습니다. 다른 연도·월을 선택해 보세요.</p>';
+    if (curTrip) { const n = allTrips.find((t) => t.id === curTrip.id); if (n) { n.buses.sort((a, b) => a.bus_no - b.bus_no); curTrip = n; } }
+    if (curTrip && !list.some((t) => t.id === curTrip.id)) closeSeatSection();   // 선택했던 산행이 조건에서 빠지면 신청 화면을 닫음
+    $('tripSelect').innerHTML = '<option value="">산행을 선택하세요</option>' + list.map((t) =>
+      `<option value="${t.id}">${esc(shortDate(t.trip_date))} · ${esc(t.clubs?.name)} · ${esc(t.title)}</option>`).join('');
+    $('tripSelect').value = curTrip ? String(curTrip.id) : '';
+    $('tripSelect').disabled = !list.length;
+    $('tripList').innerHTML = list.length ? '' : '해당하는 산행계획이 없어 신청할 수 없습니다. 다른 산악회·연도·월을 선택해 보세요.';
+    if (!curTrip) $('tripInfo').classList.add('hidden');
   }
   $('fClub').addEventListener('change', renderTrips);
   $('fYear').addEventListener('change', () => { fillMonths(); renderTrips(); });
   $('fMonth').addEventListener('change', renderTrips);
 
-  $('tripList').addEventListener('click', (e) => {
-    const card = e.target.closest('[data-trip-id]'); if (!card) return;
-    curTrip = allTrips.find((t) => t.id === Number(card.dataset.tripId));
+  $('tripSelect').addEventListener('change', () => {
+    const id = Number($('tripSelect').value);
+    if (!id) return closeSeatSection();
+    curTrip = allTrips.find((t) => t.id === id);
     curTrip.buses.sort((a, b) => a.bus_no - b.bus_no);
-    curBusId = curTrip.buses[0]?.id; picked = [];
+    curBusId = curTrip.buses[0]?.id; picked = []; people = [];
+    $('tripInfo').innerHTML = tripInfoHtml(curTrip); $('tripInfo').classList.remove('hidden');
     $('selectedTripTitle').textContent = `${curTrip.clubs?.name} ${curTrip.title}`;
     $('payInfo').innerHTML = payHtml(curTrip);
     $('seatSection').classList.remove('hidden');
@@ -353,6 +383,7 @@
   });
 
   $('submitBtn').addEventListener('click', async () => {
+    if (!curTrip || !curBusId) return alert('신청할 산행을 먼저 선택해 주세요. 해당하는 산행계획이 없으면 신청할 수 없습니다.');
     const name = $('mainUserName').value.trim(), phone = $('phone').value.trim();
     const comps = people.slice(1).map((p) => p.name.trim().replace(/,/g, ' '));
     if (!name) return alert('대표 신청자 이름을 입력해주세요.');
@@ -413,14 +444,44 @@
 
   /* ---- 명단 ---- */
   async function loadReservations() {
-    const { data, error } = await db.from('reservations').select('*, buses(bus_no, vehicle_type, trips(id, title, clubs(name)))').order('created_at', { ascending: false });
+    const { data, error } = await db.from('reservations').select('*, buses(bus_no, vehicle_type, trips(id, title, trip_date, pay_mode, club_id, clubs(name)))').order('created_at', { ascending: false });
     if (error) { $('resTable').innerHTML = `<tr><td colspan="10" class="px-3 py-3 text-red-600">${esc(error.message)}</td></tr>`; return; }
     resRows = data; renderReservations();
   }
+  function resFiltered() {
+    const c = $('resClub').value, t = $('resTrip').value, st = $('resStatus').value, sort = $('resSort').value;
+    const base = resRows.filter((r) => { const tr = r.buses?.trips; return (!c || String(tr?.club_id) === c) && (!t || String(tr?.id) === t); });
+    const tripTime = (r) => new Date(r.buses?.trips?.trip_date || 0).getTime();
+    const cmp = {
+      new: (a, b) => new Date(b.created_at) - new Date(a.created_at),
+      old: (a, b) => new Date(a.created_at) - new Date(b.created_at),
+      name: (a, b) => a.main_user_name.localeCompare(b.main_user_name, 'ko'),
+      trip: (a, b) => tripTime(a) - tripTime(b) || new Date(a.created_at) - new Date(b.created_at),
+    }[sort];
+    return { base, rows: base.filter((r) => !st || r.status === st).sort(cmp) };
+  }
+
+  function fillResFilters() {
+    const keep = $('resClub').value;
+    $('resClub').innerHTML = opts(clubs.map((c) => [c.id, c.name]), '전체 산악회');
+    $('resClub').value = clubs.some((c) => String(c.id) === keep) ? keep : '';
+    fillResTrips();
+  }
+  function fillResTrips() {
+    const c = $('resClub').value, keep = $('resTrip').value;
+    const list = adminTrips.filter((t) => !c || String(t.club_id) === c);
+    $('resTrip').innerHTML = opts(list.map((t) => [t.id, `${shortDate(t.trip_date)} · ${t.clubs?.name} · ${t.title}`]), '전체 산행');
+    $('resTrip').value = list.some((t) => String(t.id) === keep) ? keep : '';
+  }
+
   function renderReservations() {
-    const f = $('resTrip').value, rows = resRows.filter((r) => !f || String(r.buses?.trips?.id) === f);
+    const { rows, base } = resFiltered();
+    const cnt = (k) => base.filter((r) => r.status === k).length;
+    const live = rows.filter((r) => r.status === 'pending' || r.status === 'confirmed');
+    $('resSummary').textContent = `전체 ${base.length}건 · 신청 ${cnt('pending')} · 입금완료 ${cnt('confirmed')} · 취소 ${cnt('cancelled')} · 기한 만료 ${cnt('expired')}`
+      + `  |  표시 ${rows.length}건, 인원 ${rows.reduce((a, r) => a + r.headcount, 0)}명, 금액 ${won(live.reduce((a, r) => a + r.amount, 0), '0원')} (취소·만료 제외)`;
     $('resTable').innerHTML = rows.length ? rows.map((r) => {
-      const [lb, st] = STATUS[r.status] || [r.status, ''];
+      const st = (STATUS[r.status] || ['', ''])[1], lb = statusLabel(r);
       return `<tr>
         <td class="px-3 py-2">${esc(r.buses?.trips?.clubs?.name)} ${esc(r.buses?.trips?.title)}</td>
         <td class="px-3 py-2 whitespace-nowrap">${r.buses?.bus_no}호차<div class="text-xs text-gray-500">${VEH[r.buses?.vehicle_type] || ''}</div></td>
@@ -436,9 +497,10 @@
           ${r.status === 'pending' || r.status === 'expired' ? `<button data-act="confirm" data-id="${r.id}" class="btn sm">입금 확정</button>` : ''}
           ${r.status === 'pending' || r.status === 'confirmed' ? `<button data-act="cancel" data-id="${r.id}" class="btn line sm ml-1">예약 취소</button>` : ''}
         </td></tr>`;
-    }).join('') : '<tr><td colspan="10" class="px-3 py-3 text-center text-gray-500">접수된 예약이 없습니다.</td></tr>';
+    }).join('') : '<tr><td colspan="10" class="px-3 py-3 text-center text-gray-500">조건에 맞는 신청자가 없습니다.</td></tr>';
   }
-  $('resTrip').addEventListener('change', renderReservations);
+  $('resClub').addEventListener('change', () => { fillResTrips(); renderReservations(); });
+  ['resTrip', 'resStatus', 'resSort'].forEach((id) => $(id).addEventListener('change', renderReservations));
 
   $('resTable').addEventListener('click', async (e) => {
     const b = e.target.closest('[data-act]'); if (!b) return;
@@ -453,12 +515,12 @@
   });
 
   $('csvBtn').addEventListener('click', () => {
-    const f = $('resTrip').value, rows = resRows.filter((r) => !f || String(r.buses?.trips?.id) === f);
+    const { rows } = resFiltered();
     if (!rows.length) return alert('저장할 명단이 없습니다.');
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const out = [['산악회', '산행', '호차', '신청자', '연락처', '입금자명', '인원', '좌석', '입금액', '탑승자(구분)', '상태', '입금기한', '신청일시'].map(q).join(',')];
     rows.forEach((r) => out.push([r.buses?.trips?.clubs?.name, r.buses?.trips?.title, r.buses?.bus_no, r.main_user_name, r.phone,
-      r.depositor_name || r.main_user_name, r.headcount, r.seat_numbers, r.amount, peopleList(r), (STATUS[r.status] || [r.status])[0],
+      r.depositor_name || r.main_user_name, r.headcount, r.seat_numbers, r.amount, peopleList(r), statusLabel(r),
       fmt(r.expires_at), fmt(r.created_at)].map(q).join(',')));
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob(['\ufeff' + out.join('\r\n')], { type: 'text/csv;charset=utf-8;' }));
@@ -470,7 +532,7 @@
     const ids = clubs.map((c) => c.id);
     const { data } = await db.from('trips').select('id, title, trip_date, fee_regular, fee_guest, notice_url, pay_mode, club_id, clubs(name), buses(id, bus_no, vehicle_type)').in('club_id', ids).order('trip_date');
     adminTrips = data || [];
-    $('resTrip').innerHTML = opts(adminTrips.map((t) => [t.id, `${t.clubs?.name} ${t.title}`]), '전체 산행');
+    fillResFilters();
     const keep = adminYearInit ? $('tripYear').value : CUR.slice(0, 4);
     const ys = [...new Set([CUR.slice(0, 4), ...adminTrips.map((t) => monthKey(t.trip_date).slice(0, 4))])].sort();
     adminYearInit = true;
