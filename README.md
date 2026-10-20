@@ -1,6 +1,6 @@
-# 산악회 버스 예약 시스템
+# 포항시 통합산행 신청
 
-여러 산악회의 연간 산행 계획을 등록하고, 버스 좌석(1~2열 제외)을 지정해 신청하면 가배정(노랑), 담당자가 입금을 확인하면 확정(빨강)되는 웹앱입니다.
+여러 산악회의 연간 산행 계획을 등록하고, 차량 좌석(버스는 1열 제외)을 지정해 신청하면 가배정(노랑), 담당자가 입금을 확인하면 확정(빨강)되는 웹앱입니다. 후불 산행은 신청 즉시 확정됩니다.
 
 ## 설정 순서
 
@@ -8,7 +8,7 @@
 2. **총괄 관리자 계정**: Authentication > Users에서 계정을 만들고, SQL Editor에서 아래를 실행
    `insert into super_admins (user_id) select id from auth.users where email = '내이메일@example.com';`
 3. **담당자 계정**: 산악회 담당자마다 Authentication > Users에서 계정을 만들어 둡니다. (신규 가입 허용은 꺼두세요)
-4. `index.html` 위쪽의 `SUPABASE_URL`, `SUPABASE_ANON_KEY`를 Project Settings > API 값으로 교체
+4. **`config.js`**의 `SUPABASE_URL`, `SUPABASE_ANON_KEY`를 Supabase Connect 창(또는 Project Settings > API Keys) 값으로 교체 (한 번만 입력하면 되고, 이후 `index.html`을 교체해도 유지됩니다. 업데이트할 때는 `config.js`를 덮어쓰지 마세요)
 5. 앱에서 **관리자 > 총괄 로그인** 후 산악회 추가 → 담당자 이메일 지정
 
 ## 연간 산행 계획 일괄 등록
@@ -32,3 +32,55 @@
 ## 배포
 
 GitHub에 올린 뒤 Netlify에서 저장소를 연결하면 됩니다. (`netlify.toml` 포함)
+
+## 산행공지 링크
+
+산행 등록·수정 시 "산행공지 링크" 칸에 산악회 카페의 산행공지 글 주소를 붙여넣으면, 산행 카드와 좌석 선택 화면에 "산행공지 보기" 링크가 나타납니다. 일괄 등록에서는 여섯 번째 칸에 넣습니다. (회원 전용 글은 로그인이 필요할 수 있으니 공개 글 주소를 권장합니다.)
+
+## 입금 안내 문자 (선택)
+
+신청이 접수되면 신청자 연락처로 입금 안내 문자가 발송됩니다. 솔라피(SOLAPI) 가입과 발신번호 등록, 잔액 충전이 필요하며 발송 건당 요금이 부과됩니다.
+
+1. 솔라피에서 발신번호를 등록하고 API Key / API Secret을 발급받습니다.
+2. Supabase > Edge Functions에서 새 함수 `send-sms`를 만들고 `send-sms.ts` 내용을 붙여넣어 Deploy 합니다.
+3. Edge Functions > Secrets에 `SOLAPI_API_KEY`, `SOLAPI_API_SECRET`, `SOLAPI_SENDER`(발신번호, 숫자만)를 등록합니다.
+4. 이미 `schema.sql`을 실행했다면 `migration_sms_notice.sql`을 SQL Editor에서 실행합니다.
+
+## 차량 종류
+
+산행을 등록할 때 1호차 차량을 고르고(버스 45인승, 버스 28인승, 승합 11인승, 승용 5인승), 목록의 "버스 추가"로 다른 차량을 더할 수 있습니다. "차량 변경"은 신청이 없는 차량만 가능합니다.
+예약할 수 없는 좌석은 버스는 1열, 승합·승용은 운전석(1번)입니다. (버스 45인승은 4석 x 10열 + 뒷열 5석, 28인승은 3석 x 8열 + 뒷열 4석) 이미 schema.sql을 실행한 프로젝트는 `migration_vehicle.sql`을 한 번 실행하세요. 이미 실행했다면 `migration_bus28.sql`을 실행하세요(31인승 -> 28인승, 버스 1열만 제한).
+
+## 후불 산행
+
+산행 등록·수정의 "회비 납부 방식"을 후불로 고르면, 신청 즉시 좌석이 확정되고 회비는 현장에서 냅니다. 선불은 기존처럼 입금 확인 후 확정됩니다. 이미 쓰는 프로젝트는 `migration_postpaid.sql`을 한 번 실행하세요.
+
+## 지난 산행
+
+출발 시각이 지난 산행은 신청 화면의 목록에서 빠지고, 서버에서도 신청이 거절됩니다. (관리자 화면의 산행 목록에는 그대로 남습니다.) 이미 쓰는 프로젝트는 `migration_past_trips.sql`을 한 번 실행하세요.
+
+
+## 다음카페 산악회 자동 검색 기능
+
+이번 버전에는 총괄 관리자 화면에서 **산악회 이름 + 다음카페 주소**만 입력해 산악회를 추가하는 기능이 들어 있습니다.
+
+### Supabase SQL
+`migration_club_cafe.sql`을 기존 Supabase 프로젝트의 SQL Editor에서 1회 실행하세요.
+기존 데이터는 유지됩니다. 현재 3개 산악회(포항다음산악회, 아모르산악클럽, 포항마루금산악회)의 다음카페 정보도 자동 등록/갱신합니다.
+
+### Netlify 환경변수
+Netlify 사이트의 Environment variables에 다음 변수를 추가하세요.
+
+`KAKAO_REST_API_KEY` = 카카오 Developers에서 발급받은 REST API Key
+
+REST API Key는 `index.html`이나 `config.js`에 넣지 않습니다. Netlify Function `/.netlify/functions/kakao-cafe-search`가 대신 카카오 API를 호출합니다.
+
+### 산악회 추가
+관리자 → 산악회 관리 → 산악회 이름과 다음카페 주소 입력 → 산악회 추가
+
+예:
+- 포항다음산악회 / https://cafe.daum.net/pohanghanmailsan
+- 아모르산악클럽 / https://cafe.daum.net/amorclub
+- 포항마루금산악회 / https://cafe.daum.net/marugeum
+
+등록 후 `공지검색` 버튼으로 해당 카페의 산행공지를 검색할 수 있습니다. 검색 결과는 지정한 카페 ID와 URL이 일치하는 글만 표시합니다.
