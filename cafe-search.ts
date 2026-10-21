@@ -72,19 +72,19 @@ Deno.serve(async (req) => {
     let found = 0, added = 0;
     const errors: string[] = [];
     for (const club of clubs ?? []) {
-      const query = (club.search_query || `${club.name} 산행공지`).trim();
+      const query = (club.search_query || `${club.cafe.url} 산행공지`).trim();
       const id = cafeId(club.cafe_url);
       const url = new URL('https://dapi.kakao.com/v2/search/cafe');
       url.searchParams.set('query', query);
       url.searchParams.set('sort', 'recency');
       url.searchParams.set('size', '30');
       const res = await fetch(url, { headers: { Authorization: `KakaoAK ${kakaoKey}` } });
-      if (!res.ok) { errors.push(`${club.name}: 검색 실패(${res.status})`); continue; }
+      if (!res.ok) { errors.push(`${club.cafe.url}: 검색 실패(${res.status})`); continue; }
       const docs = (await res.json()).documents ?? [];
       found += docs.length;
       const mine = id ? docs.filter((d: { url: string }) => cafeId(d.url) === id) : docs;
-      if (id && docs.length && !mine.length) errors.push(`${club.name}: 검색된 ${docs.length}건 중 등록한 카페 주소의 글이 없습니다.`);
-      if (!docs.length) errors.push(`${club.name}: 검색 결과가 없습니다. (검색어 "${query}")`);
+      if (id && docs.length && !mine.length) errors.push(`${club.cafe.url}: 검색된 ${docs.length}건 중 등록한 카페 주소의 글이 없습니다.`);
+      if (!docs.length) errors.push(`${club.cafe.url}: 검색 결과가 없습니다. (검색어 "${query}")`);
       const rows = mine.map((d: Record<string, string>) => {
         const title = strip(d.title), summary = strip(d.contents);
         return {
@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
       if (rows.length) {
         const { data: ins, error } = await db.from('trip_candidates')
           .upsert(rows, { onConflict: 'club_id,url', ignoreDuplicates: true }).select('id');
-        if (error) errors.push(`${club.name}: 저장 실패(${error.message})`); else added += ins?.length ?? 0;
+        if (error) errors.push(`${club.cafe.url}: 저장 실패(${error.message})`); else added += ins?.length ?? 0;
       }
     }
     return json({ ok: true, clubs: clubs?.length ?? 0, found, added, errors });
