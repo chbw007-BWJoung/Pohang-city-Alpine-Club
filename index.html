@@ -131,7 +131,7 @@
       </div>
 
       <div class="card space-y-3">
-        <h2 class="text-lg font-bold">산악회 정보 <span class="text-xs font-normal text-gray-500">(입금 계좌와 기한)</span></h2>
+        <h2 class="text-lg font-bold">산악회 정보 <span class="text-xs font-normal text-gray-500">(이름, 입금 계좌, 카페 검색)</span></h2>
         <select id="infoClub" class="inp" aria-label="산악회"></select>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div><label for="infoName" class="text-xs text-gray-500">산악회 이름</label><input id="infoName" class="inp"></div>
@@ -139,7 +139,12 @@
           <div><label for="infoBank" class="text-xs text-gray-500">은행</label><input id="infoBank" class="inp" placeholder="예: 농협"></div>
           <div><label for="infoAccount" class="text-xs text-gray-500">계좌번호</label><input id="infoAccount" class="inp" inputmode="numeric"></div>
           <div><label for="infoHolder" class="text-xs text-gray-500">예금주</label><input id="infoHolder" class="inp"></div>
+          <div class="sm:col-span-2"><label for="infoCafe" class="text-xs text-gray-500">카페 주소 (다음 카페 대표 주소)</label>
+            <input id="infoCafe" class="inp" inputmode="url" placeholder="예: https://cafe.daum.net/카페아이디"></div>
+          <div class="sm:col-span-2"><label for="infoQuery" class="text-xs text-gray-500">공지 검색어</label>
+            <input id="infoQuery" class="inp" placeholder="예: 포항산악회 산행공지"></div>
         </div>
+        <p class="text-xs text-gray-500">카페 주소와 검색어는 산행 공지 후보를 자동으로 찾는 데 쓰입니다. 검색어를 비워 두면 "산악회 이름 + 산행공지"로 찾습니다.</p>
         <button id="saveClubBtn" class="btn">산악회 정보 저장</button>
       </div>
 
@@ -147,6 +152,25 @@
         <div class="flex justify-between items-center gap-2 flex-wrap">
           <h2 class="text-lg font-bold">산행 계획 관리</h2>
           <select id="tripYear" class="inp !w-auto" aria-label="연도 필터"><option value="">전체 연도</option></select>
+        </div>
+        <div class="rounded-lg border border-gray-200 p-3 space-y-2">
+          <div class="flex justify-between items-center gap-2 flex-wrap">
+            <h3 class="font-bold text-sm">카페에서 찾은 산행 공지 후보</h3>
+            <div class="flex gap-2">
+              <select id="candStatus" class="inp !w-auto" aria-label="후보 상태">
+                <option value="new">새 후보</option><option value="registered">등록함</option><option value="ignored">무시함</option><option value="">전체</option></select>
+              <button id="searchNowBtn" class="btn alt sm">지금 검색</button>
+            </div>
+          </div>
+          <p class="text-xs text-gray-500">"산행으로 등록"을 누르면 아래 입력칸에 공지 제목과 링크가 채워집니다. 날짜(추정)와 회비는 공지를 열어 확인한 뒤 저장하세요.</p>
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead class="bg-gray-50 text-left text-gray-500"><tr>
+                <th class="px-3 py-2">산악회</th><th class="px-3 py-2">공지 제목</th><th class="px-3 py-2">작성일</th>
+                <th class="px-3 py-2">추정 산행일</th><th class="px-3 py-2">처리</th></tr></thead>
+              <tbody id="candTable" class="divide-y divide-gray-200"></tbody>
+            </table>
+          </div>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <select id="newClub" class="inp" aria-label="산악회"></select>
@@ -184,40 +208,19 @@
       </div>
 
       <div id="superBox" class="card space-y-4 hidden">
-        <h2 class="text-lg font-bold">산악회 관리 <span class="text-xs font-normal text-gray-500">(총괄 관리자 전용)</span></h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <input id="clubName" class="inp" placeholder="산악회 이름 (예: 경주산악회)">
-          <input id="clubCafeUrl" class="inp" placeholder="다음카페 주소 (예: https://cafe.daum.net/example)">
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <input id="clubSearchQuery" class="inp" placeholder="검색어 (비우면 산악회 이름 사용)">
+        <h2 class="text-lg font-bold">산악회와 담당자 관리 <span class="text-xs font-normal text-gray-500">(총괄 관리자 전용)</span></h2>
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
+          <input id="clubName" class="inp sm:col-span-2" placeholder="새 산악회 이름">
           <input id="clubHours" type="number" min="1" value="48" class="inp" aria-label="입금 기한(시간)" title="입금 기한(시간)">
           <button id="addClubBtn" class="btn">산악회 추가</button>
         </div>
-        <p class="text-xs text-gray-500 -mt-2">카페 주소만 입력해도 카페 ID를 자동으로 추출합니다. 검색어는 필요할 때만 별도로 지정하세요. 등록 후 코드 수정이나 Netlify 재배포 없이 산악회를 추가할 수 있습니다.</p>
-        <div class="border-t pt-4">
-          <h3 class="font-bold mb-2">등록된 산악회</h3>
-          <div id="clubList" class="space-y-2"></div>
+        <p class="text-xs text-gray-500 -mt-2">입금 기한은 신청 후 몇 시간 안에 입금해야 하는지입니다. 지나면 가배정이 자동으로 풀립니다.</p>
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
+          <select id="assignClub" class="inp sm:col-span-1" aria-label="산악회"></select>
+          <input id="assignEmail" type="email" class="inp sm:col-span-2" placeholder="담당자 이메일 (이미 만든 계정)">
+          <button id="assignBtn" class="btn alt">담당자 지정</button>
         </div>
-        <div class="border-t pt-4">
-          <h3 class="font-bold mb-2">산행공지 검색</h3>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <select id="searchClub" class="inp" aria-label="검색할 산악회"></select>
-            <input id="clubSearchExtra" class="inp" placeholder="추가 검색어 (선택)">
-            <button id="searchCafeBtn" class="btn alt">공지 검색</button>
-          </div>
-          <div id="cafeSearchStatus" class="text-xs text-gray-500 mt-2"></div>
-          <div id="cafeSearchResults" class="mt-2 space-y-2"></div>
-        </div>
-        <div class="border-t pt-4">
-          <h3 class="font-bold mb-2">산악회 담당자</h3>
-          <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
-            <select id="assignClub" class="inp sm:col-span-1" aria-label="산악회"></select>
-            <input id="assignEmail" type="email" class="inp sm:col-span-2" placeholder="담당자 이메일 (이미 만든 계정)">
-            <button id="assignBtn" class="btn alt">담당자 지정</button>
-          </div>
-          <ul id="adminList" class="text-sm divide-y divide-gray-200 mt-2"></ul>
-        </div>
+        <ul id="adminList" class="text-sm divide-y divide-gray-200"></ul>
       </div>
     </div>
   </section>
@@ -250,7 +253,7 @@
   const opts = (arr, ph) => (ph ? `<option value="">${ph}</option>` : '') + arr.map(([v, t]) => `<option value="${esc(v)}">${esc(t)}</option>`).join('');
 
   let allTrips = [], curTrip = null, curBusId = null, seats = [], picked = [];
-  let access = { super: false, clubs: [] }, clubs = [], adminTrips = [], resRows = [], editTripId = null, people = [];
+  let access = { super: false, clubs: [] }, clubs = [], adminTrips = [], resRows = [], editTripId = null, people = [], candidates = [], candId = null;
 
   /* ================= 방문자: 산행 선택 ================= */
   async function loadTrips() {
@@ -452,12 +455,11 @@
     if (none) return;
     const all = (await db.from('clubs').select('*').order('name')).data || [];
     clubs = access.super ? all : all.filter((c) => access.clubs.includes(c.id));
-    renderClubList(clubs);
     $('newClub').innerHTML = opts(clubs.map((c) => [c.id, c.name]));
     $('infoClub').innerHTML = opts(clubs.map((c) => [c.id, c.name])); fillClubInfo();
     $('superBox').classList.toggle('hidden', !access.super);
     if (access.super) { $('assignClub').innerHTML = opts(all.map((c) => [c.id, c.name])); loadAdmins(); }
-    await loadAdminTrips(); loadReservations();
+    await loadAdminTrips(); loadReservations(); loadCandidates();
   }
 
   $('loginBtn').addEventListener('click', async () => {
@@ -580,6 +582,7 @@
 
   function setEdit(t) {
     editTripId = t ? t.id : null;
+    if (!t) candId = null;
     $('newVehicle').disabled = !!t;
     $('newPayMode').value = t ? t.pay_mode : 'prepaid';
     $('addTripBtn').textContent = t ? '수정 저장' : '산행 추가';
@@ -624,15 +627,65 @@
     return `${m[1]}-${p(m[2])}-${p(m[3])}T${p(m[4] ?? 7)}:${m[5] ?? '00'}:00+09:00`;
   };
 
+  /* ---- 카페 검색 결과(산행 공지 후보) ---- */
+  async function loadCandidates() {
+    const { data, error } = await db.from('trip_candidates').select('*, clubs(name)')
+      .order('posted_at', { ascending: false, nullsFirst: false }).limit(300);
+    candidates = error ? [] : data || [];
+    renderCandidates(error);
+  }
+  function renderCandidates(err) {
+    const st = $('candStatus').value, rows = candidates.filter((c) => !st || c.status === st);
+    $('candTable').innerHTML = err ? `<tr><td colspan="5" class="px-3 py-3 text-red-600">${esc(err.message)}</td></tr>`
+      : rows.length ? rows.map((c) => `<tr>
+        <td class="px-3 py-2 whitespace-nowrap">${esc(c.clubs?.name)}</td>
+        <td class="px-3 py-2"><a href="${esc(safeUrl(c.url))}" target="_blank" rel="noopener noreferrer" class="underline" style="color:#2c6e8f">${esc(c.title)}</a>
+          ${c.summary ? `<div class="text-xs text-gray-500 mt-1 max-w-md">${esc(c.summary)}</div>` : ''}</td>
+        <td class="px-3 py-2 whitespace-nowrap text-xs">${c.posted_at ? esc(new Date(c.posted_at).toLocaleDateString('ko-KR', KST)) : '-'}</td>
+        <td class="px-3 py-2 whitespace-nowrap text-xs">${c.guess_date ? `${esc(c.guess_date)}<div class="text-gray-500">추정</div>` : '-'}</td>
+        <td class="px-3 py-2 whitespace-nowrap">${c.status === 'new'
+          ? `<button data-cact="use" data-id="${c.id}" class="btn sm">산행으로 등록</button> <button data-cact="ignore" data-id="${c.id}" class="btn line sm ml-1">무시</button>`
+          : `<span class="text-xs text-gray-500">${c.status === 'registered' ? '등록함' : '무시함'}</span> <button data-cact="reset" data-id="${c.id}" class="btn line sm ml-1">되돌리기</button>`}</td></tr>`).join('')
+      : '<tr><td colspan="5" class="px-3 py-3 text-center text-gray-500">표시할 후보가 없습니다. "지금 검색"을 눌러 보세요.</td></tr>';
+  }
+  $('candStatus').addEventListener('change', () => renderCandidates());
+
+  $('candTable').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-cact]'); if (!b) return;
+    const c = candidates.find((x) => x.id === Number(b.dataset.id)); if (!c) return;
+    if (b.dataset.cact === 'use') {
+      setEdit(null);
+      $('newClub').value = c.club_id; $('newTitle').value = c.title.slice(0, 100); $('newNotice').value = c.url;
+      if (c.guess_date) $('newDate').value = `${c.guess_date}T07:00`;
+      candId = c.id; $('cancelEditBtn').classList.remove('hidden');
+      $('newTitle').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return alert('공지 제목과 링크를 채웠습니다. 날짜(추정)와 회비를 확인한 뒤 "산행 추가"를 눌러주세요.');
+    }
+    const { error } = await db.from('trip_candidates').update({ status: b.dataset.cact === 'ignore' ? 'ignored' : 'new' }).eq('id', c.id);
+    if (error) return alert(error.message);
+    loadCandidates();
+  });
+
+  $('searchNowBtn').addEventListener('click', async () => {
+    const btn = $('searchNowBtn'); btn.disabled = true; btn.textContent = '검색 중...';
+    const { data, error } = await db.functions.invoke('cafe-search', { body: {} });
+    btn.disabled = false; btn.textContent = '지금 검색';
+    if (error || !data) return alert('검색 기능을 호출하지 못했습니다. cafe-search 함수 배포와 설정을 확인해 주세요.');
+    if (!data.ok) return alert(data.error || '검색에 실패했습니다.');
+    alert(`${data.clubs}개 산악회를 검색했습니다.\n찾은 글 ${data.found}건, 새 후보 ${data.added}건` + (data.errors?.length ? '\n\n확인할 점:\n' + data.errors.join('\n') : ''));
+    $('candStatus').value = 'new'; loadCandidates();
+  });
+
   $('addTripBtn').addEventListener('click', async () => {
-    const title = $('newTitle').value.trim(), d = $('newDate').value;
+    const title = $('newTitle').value.trim(), d = $('newDate').value, cid = candId;
     if (!title || !d) return alert('산행명과 일시를 입력해주세요.');
     const nu = $('newNotice').value.trim();
     if (nu && !safeUrl(nu)) return alert('산행공지 링크는 http:// 또는 https://로 시작해야 합니다.');
     const row = { notice_url: nu || null, pay_mode: $('newPayMode').value, club_id: Number($('newClub').value), title, trip_date: toIso(d.replace('T', ' ')), fee_regular: Math.max(Number($('newFeeReg').value) || 0, 0), fee_guest: Math.max(Number($('newFeeGuest').value) || 0, 0) };
     const { error } = editTripId ? await db.from('trips').update(row).eq('id', editTripId) : await db.from('trips').insert({ ...row, vehicle_type: $('newVehicle').value });
     if (error) return alert(error.message);
-    setEdit(null); await loadAdminTrips(); loadTrips();
+    if (cid && !editTripId) await db.from('trip_candidates').update({ status: 'registered' }).eq('id', cid);
+    setEdit(null); await loadAdminTrips(); loadTrips(); loadCandidates();
   });
 
   $('importFile').addEventListener('change', async (e) => { const f = e.target.files[0]; if (f) $('importText').value = await f.text(); });
@@ -659,109 +712,24 @@
     const c = clubs.find((x) => String(x.id) === $('infoClub').value) || {};
     $('infoName').value = c.name || ''; $('infoHours').value = c.payment_hours || 48; $('infoBank').value = c.bank_name || '';
     $('infoAccount').value = c.bank_account || ''; $('infoHolder').value = c.bank_holder || '';
+    $('infoCafe').value = c.cafe_url || ''; $('infoQuery').value = c.search_query || '';
   }
   $('infoClub').addEventListener('change', fillClubInfo);
   $('saveClubBtn').addEventListener('click', async () => {
     const { error } = await db.rpc('update_club', { p_club_id: Number($('infoClub').value), p_name: $('infoName').value,
-      p_payment_hours: Number($('infoHours').value) || 48, p_bank_name: $('infoBank').value, p_bank_account: $('infoAccount').value, p_bank_holder: $('infoHolder').value });
+      p_payment_hours: Number($('infoHours').value) || 48, p_bank_name: $('infoBank').value, p_bank_account: $('infoAccount').value, p_bank_holder: $('infoHolder').value,
+      p_cafe_url: $('infoCafe').value, p_search_query: $('infoQuery').value });
     if (error) return alert(error.message);
     alert('저장되었습니다.'); const k = $('infoClub').value; await refreshAdmin(); $('infoClub').value = k; fillClubInfo(); loadTrips();
   });
 
-  /* ---- 총괄: 산악회·다음카페·담당자 ---- */
-  function extractDaumCafeId(raw) {
-    const s = String(raw || '').trim();
-    if (!s) return '';
-    const m = s.match(/cafe\.daum\.net\/([^/?#]+)/i);
-    return m ? m[1].trim() : '';
-  }
-  function clubCafeUrl(c) {
-    return c?.cafe_url || (c?.cafe_id ? `https://cafe.daum.net/${encodeURIComponent(c.cafe_id)}` : '');
-  }
-  function clubSearchQuery(c) {
-    return (c?.search_query || c?.name || '').trim();
-  }
-  function renderClubList(all) {
-    const rows = all || [];
-    $('clubList').innerHTML = rows.length ? rows.map(c => {
-      const active = c.cafe_search_enabled !== false;
-      return `<div class="border rounded-lg p-3 flex flex-col sm:flex-row sm:items-center gap-2">
-        <div class="flex-1">
-          <div class="font-bold">${esc(c.name)} ${active ? '<span class="text-xs text-green-700">검색사용</span>' : '<span class="text-xs text-gray-500">검색중지</span>'}</div>
-          <div class="text-xs text-gray-500 break-all">${esc(clubCafeUrl(c) || '다음카페 주소 미등록')}</div>
-          <div class="text-xs text-gray-500">검색어: ${esc(clubSearchQuery(c) || '-')}</div>
-        </div>
-        <div class="flex gap-1">
-          <button data-club-search="${c.id}" class="btn alt sm">공지검색</button>
-          <button data-club-toggle="${c.id}" data-enabled="${active}" class="btn line sm">${active ? '검색중지' : '검색사용'}</button>
-          <button data-club-delete="${c.id}" class="btn line sm">삭제</button>
-        </div>
-      </div>`;
-    }).join('') : '<div class="text-sm text-gray-500">등록된 산악회가 없습니다.</div>';
-    $('searchClub').innerHTML = opts(rows.map(c => [c.id, c.name]), '산악회 선택');
-  }
-
+  /* ---- 총괄: 산악회·담당자 ---- */
   $('addClubBtn').addEventListener('click', async () => {
-    const name = $('clubName').value.trim();
-    const cafeUrlRaw = $('clubCafeUrl').value.trim();
-    const cafeId = extractDaumCafeId(cafeUrlRaw);
-    const searchQuery = $('clubSearchQuery').value.trim() || name;
-    if (!name) return alert('산악회 이름을 입력해주세요.');
-    if (cafeUrlRaw && !cafeId) return alert('다음카페 주소를 확인해주세요. 예: https://cafe.daum.net/example');
-    const payload = { name, payment_hours: Number($('clubHours').value) || 48, cafe_id: cafeId || null,
-      cafe_url: cafeId ? `https://cafe.daum.net/${cafeId}` : null, search_query: searchQuery, cafe_search_enabled: true };
-    const { error } = await db.from('clubs').insert(payload);
+    const name = $('clubName').value.trim(); if (!name) return alert('산악회 이름을 입력해주세요.');
+    const { error } = await db.from('clubs').insert({ name, payment_hours: Number($('clubHours').value) || 48 });
     if (error) return alert(error.message);
-    $('clubName').value = ''; $('clubCafeUrl').value = ''; $('clubSearchQuery').value = '';
-    await refreshAdmin();
-    alert(`${name}이(가) 등록되었습니다.`);
+    $('clubName').value = ''; refreshAdmin();
   });
-
-  $('clubList').addEventListener('click', async (e) => {
-    const b = e.target.closest('button'); if (!b) return;
-    const id = Number(b.dataset.clubSearch || b.dataset.clubToggle || b.dataset.clubDelete);
-    if (!id) return;
-    if (b.dataset.clubSearch) { $('searchClub').value = String(id); return searchCafeNotices(id); }
-    if (b.dataset.clubToggle) {
-      const enabled = b.dataset.enabled !== 'true';
-      const { error } = await db.from('clubs').update({ cafe_search_enabled: enabled }).eq('id', id);
-      if (error) return alert(error.message);
-      return refreshAdmin();
-    }
-    if (b.dataset.clubDelete) {
-      const c = clubs.find(x => Number(x.id) === id);
-      if (!confirm(`'${c?.name || ''}' 산악회를 삭제할까요?\\n연결된 산행/예약이 있으면 삭제할 수 없습니다.`)) return;
-      const { error } = await db.from('clubs').delete().eq('id', id);
-      if (error) return alert(error.message);
-      refreshAdmin();
-    }
-  });
-
-  async function searchCafeNotices(clubId) {
-    const c = clubs.find(x => Number(x.id) === Number(clubId));
-    if (!c) return alert('산악회를 선택해주세요.');
-    if (!c.cafe_id) return alert('이 산악회에는 다음카페 주소가 등록되어 있지 않습니다.');
-    $('cafeSearchStatus').textContent = '카카오에서 산행공지를 검색하는 중입니다...';
-    $('cafeSearchResults').innerHTML = '';
-    const extra = $('clubSearchExtra').value.trim();
-    const q = [clubSearchQuery(c), extra].filter(Boolean).join(' ');
-    try {
-      const r = await fetch(`/.netlify/functions/kakao-cafe-search?q=${encodeURIComponent(q)}&cafeId=${encodeURIComponent(c.cafe_id)}`);
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || '검색에 실패했습니다.');
-      $('cafeSearchStatus').textContent = `검색 결과 ${data.documents?.length || 0}건`;
-      $('cafeSearchResults').innerHTML = (data.documents || []).map((d, i) => `<div class="border rounded-lg p-3">
-        <div class="font-medium">${esc((d.title || '').replace(/<[^>]+>/g,''))}</div>
-        <div class="text-xs text-gray-500 mt-1">${esc(d.datetime || '')}</div>
-        <div class="text-xs text-gray-600 mt-1">${esc((d.contents || '').replace(/<[^>]+>/g,'').slice(0,180))}</div>
-        <div class="mt-2"><a class="underline text-sm" style="color:#2c6e8f" href="${esc(safeUrl(d.url))}" target="_blank" rel="noopener noreferrer">카페 원문 열기</a></div>
-      </div>`).join('') || '<div class="text-sm text-gray-500">조건에 맞는 산행공지가 없습니다.</div>';
-    } catch (err) {
-      $('cafeSearchStatus').textContent = '';
-      alert(err.message || '검색에 실패했습니다.');
-    }
-  }
-  $('searchCafeBtn').addEventListener('click', () => searchCafeNotices(Number($('searchClub').value)));
 
   async function loadAdmins() {
     const { data, error } = await db.rpc('list_club_admins');
