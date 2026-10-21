@@ -53,7 +53,7 @@
   <section id="seatSection" class="card hidden">
     <button id="backBtn" type="button" class="btn line sm mb-3">← 산행 목록으로 돌아가기</button>
     <div class="flex justify-between items-start gap-3 mb-2">
-      <h2 class="text-lg font-bold">좌석 선택 <span class="text-sm font-normal text-gray-500">(최대 4명)</span></h2>
+      <h2 class="text-lg font-bold">좌석 선택 <span class="text-sm font-normal text-gray-500">(최대 8명)</span></h2>
       <span id="selectedTripTitle" class="text-sm font-medium text-right" style="color:#2c6e8f"></span>
     </div>
     <div id="payInfo" class="text-sm rounded-lg p-3 mb-3" style="background:#eaf3ee"></div>
@@ -162,7 +162,7 @@
               <button id="searchNowBtn" class="btn alt sm">지금 검색</button>
             </div>
           </div>
-          <p class="text-xs text-gray-500">"산행으로 등록"을 누르면 아래 입력칸에 공지 제목과 링크가 채워집니다. 날짜(추정)와 회비는 공지를 열어 확인한 뒤 저장하세요.</p>
+          <p class="text-xs text-gray-500">작성일이 이번 달·지난달인 글 중 추정 산행일이 지나지 않은 공지만 보여 줍니다. "산행으로 등록"을 누르면 아래 입력칸에 공지 제목과 링크가 채워지니, 날짜(추정)와 회비는 공지를 열어 확인한 뒤 저장하세요.</p>
           <div class="overflow-x-auto">
             <table class="min-w-full text-sm">
               <thead class="bg-gray-50 text-left text-gray-500"><tr>
@@ -232,7 +232,7 @@
   const configured = /^https?:\/\//.test(SUPABASE_URL) && !!SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.startsWith('YOUR_');
   const db = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-  const MAX_PEOPLE = 4;
+  const MAX_PEOPLE = 8;
   const STATUS = { pending: ['신청(입금 대기)', 'bg-yellow-100 text-yellow-800'], confirmed: ['입금완료', 'bg-green-100 text-green-800'],
                    cancelled: ['취소', 'bg-gray-200 text-gray-600'], expired: ['기한 만료', 'bg-orange-100 text-orange-800'] };
   const statusLabel = (r) => (r.status === 'confirmed' && r.buses?.trips?.pay_mode === 'postpaid' ? '확정(후불)' : (STATUS[r.status] || [r.status])[0]);
@@ -347,13 +347,18 @@
   });
 
   /* ================= 좌석표 ================= */
-  async function loadSeats() {
+  async function loadSeats(quiet = false) {
+    const bus = curBusId;
     await db.rpc('release_expired_reservations');
-    const { data, error } = await db.from('bus_seats').select('seat_number, row_number, blocked, status').eq('bus_id', curBusId).order('seat_number');
-    if (error || !data.length) { $('busGrid').innerHTML = '<p class="text-center text-sm text-gray-500">좌석 정보가 없습니다.</p>'; return; }
+    const { data, error } = await db.from('bus_seats').select('seat_number, row_number, blocked, status').eq('bus_id', bus).order('seat_number');
+    if (bus !== curBusId) return;   // 그 사이 다른 산행·호차로 바뀌었으면 결과를 버림
+    if (error || !data.length) { if (!quiet) $('busGrid').innerHTML = '<p class="text-center text-sm text-gray-500">좌석 정보가 없습니다.</p>'; return; }
+    if (quiet && JSON.stringify(data) === JSON.stringify(seats)) return;   // 바뀐 것이 없으면 화면을 다시 그리지 않음
+    const lost = picked.filter((n) => !data.some((s) => s.seat_number === n && s.status === 'available'));
     seats = data;
-    picked = picked.filter((n) => seats.some((s) => s.seat_number === n && s.status === 'available'));
+    picked = picked.filter((n) => !lost.includes(n));
     renderSeats();
+    if (lost.length) alert(`선택하신 ${lost.sort((a, b) => a - b).join(', ')}번 좌석이 방금 다른 신청자에게 배정되어 선택이 해제되었습니다. 다른 좌석을 골라주세요.`);
   }
 
   function seatBtn(s) {
@@ -427,6 +432,9 @@
     if (!$('consent').checked) return alert('개인정보 수집·이용에 동의해 주세요.');
     if (!picked.length) return alert('좌석을 1개 이상 선택해주세요.');
     if (comps.some((n) => !n)) return alert('동반인 이름을 모두 입력해주세요.');
+    const before = picked.length;
+    await loadSeats(true);   // 신청 직전에 좌석 상태를 다시 확인
+    if (picked.length !== before) return;
     $('submitBtn').disabled = true;
     const { data, error } = await db.rpc('reserve_seats', { p_bus_id: curBusId, p_name: name, p_phone: phone,
       p_depositor: $('depositor').value, p_companions: comps.join(', '), p_seats: [...picked].sort((a, b) => a - b), p_types: people.map((p) => p.type) });
@@ -643,8 +651,15 @@
     candidates = error ? [] : data || [];
     renderCandidates(error);
   }
+  // 목록 조건: 작성일이 이번 달·지난달이고, 추정 산행일이 지나지 않은 공지만 표시
+  const candInRange = (c) => {
+    const cur = monthKey(new Date()), [y, m] = cur.split('-').map(Number);
+    const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+    if (c.posted_at) { const k = monthKey(c.posted_at); if (k !== cur && k !== prev) return false; }
+    return !(c.guess_date && c.guess_date < new Date().toLocaleDateString('sv-SE', KST));
+  };
   function renderCandidates(err) {
-    const st = $('candStatus').value, rows = candidates.filter((c) => !st || c.status === st);
+    const st = $('candStatus').value, rows = candidates.filter((c) => (!st || c.status === st) && candInRange(c));
     $('candTable').innerHTML = err ? `<tr><td colspan="5" class="px-3 py-3 text-red-600">${esc(err.message)}</td></tr>`
       : rows.length ? rows.map((c) => `<tr>
         <td class="px-3 py-2 whitespace-nowrap">${esc(c.clubs?.name)}</td>
@@ -681,7 +696,7 @@
     btn.disabled = false; btn.textContent = '지금 검색';
     if (error || !data) return alert('검색 기능을 호출하지 못했습니다. cafe-search 함수 배포와 설정을 확인해 주세요.');
     if (!data.ok) return alert(data.error || '검색에 실패했습니다.');
-    alert(`${data.clubs}개 산악회를 검색했습니다.\n찾은 글 ${data.found}건, 새 후보 ${data.added}건` + (data.errors?.length ? '\n\n확인할 점:\n' + data.errors.join('\n') : ''));
+    alert(`${data.clubs}개 산악회를 검색했습니다.\n찾은 글 ${data.found}건 (작성일·산행일 조건으로 제외 ${data.excluded ?? 0}건), 새 후보 ${data.added}건` + (data.errors?.length ? '\n\n확인할 점:\n' + data.errors.join('\n') : ''));
     $('candStatus').value = 'new'; loadCandidates();
   });
 
@@ -760,6 +775,7 @@
   });
 
   loadTrips();
+  setInterval(() => { if (curBusId && !$('seatSection').classList.contains('hidden')) loadSeats(true); }, 15000);   // 열어 둔 좌석표를 15초마다 갱신
   setInterval(() => { if (resRows.length && !$('adminPanel').classList.contains('hidden')) renderReservations(); }, 60000);
 </script>
 </body>
