@@ -246,6 +246,13 @@
   let tripsLoaded = false, adminYearInit = false;
   // 산행 제목에 산악회 이름이 이미 들어 있으면 산악회 이름을 앞에 또 붙이지 않습니다 (한 번만 표시)
   const tripName = (club, title) => { const c = String(club ?? '').replace(/\s/g, ''), t = String(title ?? ''); return c && t.replace(/\s/g, '').includes(c) ? t : `${club ?? ''} ${t}`.trim(); };
+  // 입금 기한까지 남은 시간(짧게): 1일 3시간 / 5시간 20분 / 40분 / 기한 초과
+  const remain = (d) => {
+    const ms = new Date(d) - Date.now();
+    if (ms <= 0) return ['기한 초과', true];
+    const m = Math.floor(ms / 60000), day = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+    return [day ? `잔여 ${day}일 ${h}시간` : h ? `잔여 ${h}시간 ${mm}분` : `잔여 ${mm}분`, ms < 6 * 36e5];
+  };
   const won = (n, alt = '문의') => (n > 0 ? `${Number(n).toLocaleString('ko-KR')}원` : alt);
   const TYPE = { regular: '정회원', guest: '일일회원' };
   const VEH = { bus45: '버스 45인승', bus28: '버스 28인승', van11: '승합 11인승', car5: '승용 5인승' };
@@ -520,8 +527,8 @@
         <td class="px-3 py-2 font-bold" style="color:#2c6e8f">${esc(r.seat_numbers)}</td>
         <td class="px-3 py-2 whitespace-nowrap">${won(r.amount, '-')}</td>
         <td class="px-3 py-2 text-gray-600">${esc(peopleList(r))}</td>
-        <td class="px-3 py-2"><span class="px-2 py-0.5 rounded text-xs ${st}">${lb}</span>
-          ${r.status === 'pending' ? `<div class="text-xs text-gray-500 mt-1">기한 ${esc(fmt(r.expires_at))}</div>` : ''}</td>
+        <td class="px-3 py-2 whitespace-nowrap"><span class="px-2 py-0.5 rounded text-xs ${st}">${lb}</span>
+          ${r.status === 'pending' ? (() => { const [t, urgent] = remain(r.expires_at); return `<div class="text-xs mt-1 ${urgent ? 'text-red-600 font-medium' : 'text-gray-500'}">${t}</div>`; })() : ''}</td>
         <td class="px-3 py-2 whitespace-nowrap">
           ${r.status === 'pending' || r.status === 'expired' ? `<button data-act="confirm" data-id="${r.id}" class="btn sm">입금 확정</button>` : ''}
           ${r.status === 'pending' || r.status === 'confirmed' ? `<button data-act="cancel" data-id="${r.id}" class="btn line sm ml-1">예약 취소</button>` : ''}
@@ -753,6 +760,7 @@
   });
 
   loadTrips();
+  setInterval(() => { if (resRows.length && !$('adminPanel').classList.contains('hidden')) renderReservations(); }, 60000);
 </script>
 </body>
 </html>
