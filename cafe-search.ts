@@ -72,7 +72,14 @@ Deno.serve(async (req) => {
     let found = 0, added = 0;
     const errors: string[] = [];
     for (const club of clubs ?? []) {
-      const query = (club.search_query || `${club.cafe_url} 산행공지`).trim();
+      // 1. 카페 URL에서 정확한 카페 아이디를 추출합니다 (이미 76행에 const id = cafeId(club.cafe_url); 가 있음)
+const keyword = (club.search_query || '산행공지').trim();
+
+// 2. 카페 주소/ID와 키워드를 조합하여 검색 쿼리를 구성합니다.
+const query = id 
+  ? `cafe.daum.net/${id} ${keyword}` 
+  : `${club.name} ${keyword}`;
+
       const id = cafeId(club.cafe_url);
       const url = new URL('https://dapi.kakao.com/v2/search/cafe');
       url.searchParams.set('query', query);
