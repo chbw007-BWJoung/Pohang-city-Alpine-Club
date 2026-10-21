@@ -141,10 +141,10 @@
           <div><label for="infoHolder" class="text-xs text-gray-500">예금주</label><input id="infoHolder" class="inp"></div>
           <div class="sm:col-span-2"><label for="infoCafe" class="text-xs text-gray-500">카페 주소 (다음 카페 대표 주소)</label>
             <input id="infoCafe" class="inp" inputmode="url" placeholder="예: https://cafe.daum.net/카페아이디"></div>
-          <div class="sm:col-span-2"><label for="infoQuery" class="text-xs text-gray-500">공지 검색어</label>
-            <input id="infoQuery" class="inp" placeholder="예: 포항산악회 산행공지"></div>
+          <div class="sm:col-span-2"><label for="infoQuery" class="text-xs text-gray-500">검색어 (선택, 비우면 '산행공지')</label>
+            <input id="infoQuery" class="inp" placeholder="예: 산행공지"></div>
         </div>
-        <p class="text-xs text-gray-500">카페 주소와 검색어는 산행 공지 후보를 자동으로 찾는 데 쓰입니다. 검색어를 비워 두면 "카페 주소 + 산행공지"로 찾습니다.</p>
+        <p class="text-xs text-gray-500">산행 공지 후보는 <b>카페 주소를 기준</b>으로 찾고, 검색어는 그 카페 안에서 찾을 말입니다. 검색어를 비워 두면 "산행공지"로 찾습니다. 카페 주소가 없으면 산악회 이름으로 대신 찾습니다.</p>
         <button id="saveClubBtn" class="btn">산악회 정보 저장</button>
       </div>
 
@@ -244,6 +244,8 @@
   const monthKey = (d) => new Date(d).toLocaleDateString('sv-SE', KST).slice(0, 7);
   const CUR = monthKey(new Date()); // 현재 연-월 (예: 2026-10)
   let tripsLoaded = false, adminYearInit = false;
+  // 산행 제목에 산악회 이름이 이미 들어 있으면 산악회 이름을 앞에 또 붙이지 않습니다 (한 번만 표시)
+  const tripName = (club, title) => { const c = String(club ?? '').replace(/\s/g, ''), t = String(title ?? ''); return c && t.replace(/\s/g, '').includes(c) ? t : `${club ?? ''} ${t}`.trim(); };
   const won = (n, alt = '문의') => (n > 0 ? `${Number(n).toLocaleString('ko-KR')}원` : alt);
   const TYPE = { regular: '정회원', guest: '일일회원' };
   const VEH = { bus45: '버스 45인승', bus28: '버스 28인승', van11: '승합 11인승', car5: '승용 5인승' };
@@ -320,7 +322,7 @@
     curTrip = allTrips.find((t) => t.id === Number(card.dataset.tripId));
     curTrip.buses.sort((a, b) => a.bus_no - b.bus_no);
     curBusId = curTrip.buses[0]?.id; picked = []; people = [];
-    $('selectedTripTitle').textContent = `${curTrip.clubs?.name} ${curTrip.title}`;
+    $('selectedTripTitle').textContent = tripName(curTrip.clubs?.name, curTrip.title);
     $('payInfo').innerHTML = payHtml(curTrip);
     $('seatSection').classList.remove('hidden');
     $('seatSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -497,7 +499,7 @@
   function fillResTrips() {
     const c = $('resClub').value, keep = $('resTrip').value;
     const list = adminTrips.filter((t) => !c || String(t.club_id) === c);
-    $('resTrip').innerHTML = opts(list.map((t) => [t.id, `${shortDate(t.trip_date)} · ${t.clubs?.name} · ${t.title}`]), '전체 산행');
+    $('resTrip').innerHTML = opts(list.map((t) => [t.id, `${shortDate(t.trip_date)} · ${tripName(t.clubs?.name, t.title)}`]), '전체 산행');
     $('resTrip').value = list.some((t) => String(t.id) === keep) ? keep : '';
   }
 
@@ -510,7 +512,7 @@
     $('resTable').innerHTML = rows.length ? rows.map((r) => {
       const st = (STATUS[r.status] || ['', ''])[1], lb = statusLabel(r);
       return `<tr>
-        <td class="px-3 py-2">${esc(r.buses?.trips?.clubs?.name)} ${esc(r.buses?.trips?.title)}</td>
+        <td class="px-3 py-2 min-w-[10rem]">${esc(tripName(r.buses?.trips?.clubs?.name, r.buses?.trips?.title))}</td>
         <td class="px-3 py-2 whitespace-nowrap">${r.buses?.bus_no}호차<div class="text-xs text-gray-500">${VEH[r.buses?.vehicle_type] || ''}</div></td>
         <td class="px-3 py-2 font-medium">${esc(r.main_user_name)}</td>
         <td class="px-3 py-2">${esc(r.phone)}</td>
