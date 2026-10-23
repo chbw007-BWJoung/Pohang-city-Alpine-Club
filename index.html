@@ -144,7 +144,7 @@
           <div class="sm:col-span-2"><label for="infoQuery" class="text-xs text-gray-500">검색어 (선택, 비우면 '산행공지')</label>
             <input id="infoQuery" class="inp" placeholder="예: 산행공지"></div>
         </div>
-        <p class="text-xs text-gray-500">산행 공지 후보는 <b>카페 주소를 기준</b>으로 찾고, 검색어는 그 카페 안에서 찾을 말입니다. 검색어를 비워 두면 "산행공지"로 찾습니다. 카페 주소가 없으면 산악회 이름으로 대신 찾습니다.</p>
+        <p class="text-xs text-gray-500">산행 공지 후보는 <b>카페 주소를 기준</b>으로 찾고, 검색어는 그 카페 안에서 찾을 말입니다. 검색어를 비워 두면 "산행공지"로 찾습니다. 카페 주소가 없는 산악회는 검색하지 않습니다(산악회 이름으로는 검색하지 않습니다).</p>
         <button id="saveClubBtn" class="btn">산악회 정보 저장</button>
       </div>
 
@@ -221,6 +221,14 @@
           <button id="assignBtn" class="btn alt">담당자 지정</button>
         </div>
         <ul id="adminList" class="text-sm divide-y divide-gray-200"></ul>
+        <div class="border-t pt-3 space-y-2">
+          <h3 class="font-bold text-sm">산악회 삭제</h3>
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
+            <select id="delClub" class="inp sm:col-span-3" aria-label="삭제할 산악회"></select>
+            <button id="delClubBtn" class="btn line">산악회 삭제</button>
+          </div>
+          <p class="text-xs text-gray-500">삭제하면 산행, 좌석, 지난 신청 내역, 공지 후보, 담당자 지정이 모두 함께 삭제되고 되돌릴 수 없습니다. 신청·확정된 예약이 있는 산악회는 삭제되지 않으니 예약을 먼저 취소하세요.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -475,7 +483,7 @@
     $('newClub').innerHTML = opts(clubs.map((c) => [c.id, c.name]));
     $('infoClub').innerHTML = opts(clubs.map((c) => [c.id, c.name])); fillClubInfo();
     $('superBox').classList.toggle('hidden', !access.super);
-    if (access.super) { $('assignClub').innerHTML = opts(all.map((c) => [c.id, c.name])); loadAdmins(); }
+    if (access.super) { $('assignClub').innerHTML = opts(all.map((c) => [c.id, c.name])); $('delClub').innerHTML = $('assignClub').innerHTML; loadAdmins(); }
     await loadAdminTrips(); loadReservations(); loadCandidates();
   }
 
@@ -763,6 +771,18 @@
           <button data-uid="${a.user_id}" data-club="${a.club_id}" class="btn line sm">해제</button></li>`).join('')
       : '<li class="py-2 text-gray-500">지정된 담당자가 없습니다.</li>';
   }
+  $('delClubBtn').addEventListener('click', async () => {
+    const id = Number($('delClub').value), c = clubs.find((x) => x.id === id);
+    if (!c) return alert('삭제할 산악회를 선택해주세요.');
+    const typed = prompt(`"${c.name}"을(를) 삭제합니다.\n산행, 좌석, 지난 신청 내역, 공지 후보, 담당자 지정이 모두 함께 삭제되며 되돌릴 수 없습니다.\n\n계속하려면 산악회 이름을 똑같이 입력하세요.`);
+    if (typed === null) return;
+    if (typed.trim() !== c.name) return alert('이름이 일치하지 않아 삭제하지 않았습니다.');
+    const { error } = await db.rpc('delete_club', { p_club_id: id });
+    if (error) return alert(error.message);
+    alert('삭제되었습니다.');
+    await refreshAdmin(); loadTrips();
+  });
+
   $('assignBtn').addEventListener('click', async () => {
     const { error } = await db.rpc('assign_club_admin', { p_email: $('assignEmail').value, p_club_id: Number($('assignClub').value) });
     if (error) return alert(error.message);
