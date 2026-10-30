@@ -59,9 +59,6 @@
     </div>
     <div id="payInfo" class="text-sm rounded-lg p-3 mb-3" style="background:#eaf3ee"></div>
     <div id="busTabs" class="flex gap-2 flex-wrap mb-3"></div>
-    <div class="mb-4"><label for="boardingStop" class="block text-sm font-medium">버스 탑승지 <span class="text-red-600">*</span></label>
-      <select id="boardingStop" class="inp mt-1"><option value="">탑승지를 선택하세요</option></select>
-      <p class="text-xs text-gray-500 mt-1">신청자 전원이 같은 버스 탑승지를 이용하는 것으로 저장됩니다.</p></div>
     <div class="flex flex-wrap gap-x-4 gap-y-1 mb-4 text-xs text-gray-600">
       <span class="flex items-center"><i class="inline-block w-4 h-4 rounded mr-1" style="background:#d6dad7"></i>선택 불가</span>
       <span class="flex items-center"><i class="inline-block w-4 h-4 rounded mr-1 bg-white border border-gray-400"></i>빈자리</span>
@@ -86,6 +83,7 @@
       <div><p class="text-sm font-medium">탑승자와 회원 구분</p>
         <p class="text-xs text-gray-500 mb-2">좌석을 고르면 선택한 좌석 수만큼 칸이 생깁니다. 첫 번째는 위에 입력한 대표 신청자입니다.</p>
         <div id="people" class="space-y-2"></div>
+      <p class="text-xs text-gray-500">신청자와 동승자 각각 탑승지를 선택해주세요.</p>
         <p class="text-sm mt-2">예상 입금액: <strong id="estimate">-</strong></p></div>
       <label class="flex items-start gap-2 text-xs text-gray-600"><input id="consent" type="checkbox" class="mt-0.5"><span>[필수] 산행 신청 접수, 입금 확인, 안내 문자 발송을 위해 이름·연락처·입금자명을 수집·이용하는 것에 동의합니다.</span></label>
       <div class="flex gap-2"><button id="submitBtn" class="btn flex-1 py-3">예약 신청하기</button><button id="cancelBtn" type="button" class="btn line py-3">신청 안 함</button></div>
@@ -354,8 +352,11 @@
 
   function renderBoardingStops() {
     const list = curTrip?.boarding_stops || [];
-    $('boardingStop').innerHTML = opts(list.map((s) => [s, s]), '탑승지를 선택하세요');
-    if (list.length === 1) $('boardingStop').value = list[0];
+    const select = $('boardingStop');
+    if (select) {
+      select.innerHTML = opts(list.map((s) => [s, s]), '탑승지를 선택하세요');
+      if (list.length === 1) select.value = list[0];
+    }
   }
 
   function renderBusTabs() {
@@ -375,7 +376,7 @@
     await db.rpc('release_expired_reservations');
     const [{ data, error }, { data: rs }] = await Promise.all([
       db.from('bus_seats').select('seat_number, row_number, blocked, status').eq('bus_id', bus).order('seat_number'),
-      db.from('reservations').select('seat_numbers, main_user_name, companion_names, boarding_stop, status').eq('bus_id', bus).in('status', ['pending','confirmed'])
+      db.from('reservations').select('seat_numbers, main_user_name, companion_names, boarding_stop, boarding_stops_per_person, status').eq('bus_id', bus).in('status', ['pending','confirmed'])
     ]);
     if (bus !== curBusId) return;
     if (error || !data.length) { if (!quiet) $('busGrid').innerHTML = '<p class="text-center text-sm text-gray-500">좌석 정보가 없습니다.</p>'; return; }
@@ -383,7 +384,8 @@
     (rs || []).forEach(r => {
       const nums = String(r.seat_numbers || '').split(',').map(Number).filter(Boolean);
       const names = [r.main_user_name, ...(r.companion_names ? String(r.companion_names).split(',').map(x => x.trim()).filter(Boolean) : [])];
-      nums.forEach((n, i) => { occ[n] = { name: names[i] || r.main_user_name || '-', stop: r.boarding_stop || '-', status: r.status }; });
+      const stops = Array.isArray(r.boarding_stops_per_person) ? r.boarding_stops_per_person : [];
+      nums.forEach((n, i) => { occ[n] = { name: names[i] || r.main_user_name || '-', stop: stops[i] || r.boarding_stop || '-', status: r.status }; });
     });
     const changed = JSON.stringify(data) !== JSON.stringify(seats) || JSON.stringify(occ) !== JSON.stringify(seatOccupants);
     if (quiet && !changed) return;
@@ -401,7 +403,7 @@
     const label = blocked ? '선택 불가' : mine ? '선택함' : o ? `${o.name} / ${o.stop}` : '빈자리';
     const vt = curTrip?.buses.find((b) => b.id === curBusId)?.vehicle_type || '';
     const driver = (vt === 'van10' || vt === 'car5') && s.seat_number === 1;
-    const body = blocked ? `<span class="seat-no">${s.seat_number}번</span><span class="seat-name">관리자 배정</span>`
+    const body = blocked ? (o ? `<span class="seat-no">${s.seat_number}번</span><span class="seat-name">${esc(o.name)}</span><span class="seat-stop">${esc(o.stop)}</span>` : `<span class="seat-no">${s.seat_number}번</span><span class="seat-name">관리자 배정</span>`)
       : o ? `<span class="seat-no">${s.seat_number}번${driver ? ' · 운전석' : ''}</span><span class="seat-name">${esc(o.name)}</span><span class="seat-stop">${esc(o.stop)}</span>`
       : `<span class="seat-no">${s.seat_number}번${driver ? ' · 운전석' : ''}</span><span class="seat-name">${driver ? '운전자 지정 가능' : '빈자리'}</span>`;
     return `<button type="button" class="seat ${cls}" data-seat="${s.seat_number}" aria-label="${s.seat_number}번 좌석 ${esc(label)}"
@@ -421,14 +423,18 @@
   }
 
   function renderPeople() {
-    while (people.length < picked.length) people.push({ name: '', type: 'regular' });
+    while (people.length < picked.length) people.push({ name: '', type: 'regular', stop: '' });
     people.length = picked.length;
-    $('people').innerHTML = people.map((p, i) => `<div class="flex gap-2 items-center">
+    const stopList = curTrip?.boarding_stops || [];
+    const stopOptions = opts(stopList.map((s) => [s, s]), '탑승지 선택');
+    $('people').innerHTML = people.map((p, i) => `<div class="flex flex-wrap gap-2 items-center">
       <span class="text-xs w-12 shrink-0 text-gray-500">${i === 0 ? '대표' : '동반 ' + i}</span>
       ${i === 0 ? '<span class="flex-1 text-sm text-gray-500 truncate">신청자 본인</span>'
-        : `<input data-pi="${i}" data-pf="name" value="${esc(p.name)}" maxlength="30" class="inp flex-1" placeholder="이름" aria-label="동반인 ${i} 이름">`}
+        : `<input data-pi="${i}" data-pf="name" value="${esc(p.name)}" maxlength="30" class="inp flex-1 min-w-24" placeholder="동승자 이름" aria-label="동반인 ${i} 이름">`}
+      <select data-pi="${i}" data-pf="stop" class="inp flex-1 min-w-32" aria-label="${i === 0 ? '신청자' : '동승자 ' + i} 탑승지">${stopOptions}</select>
       <select data-pi="${i}" data-pf="type" class="inp !w-auto" aria-label="회원 구분">
         ${Object.entries(TYPE).map(([v, l]) => `<option value="${v}" ${p.type === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`).join('');
+    $('people').querySelectorAll('select[data-pf="stop"]').forEach((el) => { const i = Number(el.dataset.pi); if (people[i]?.stop) el.value = people[i].stop; else if (stopList.length === 1) { el.value = stopList[0]; people[i].stop = stopList[0]; } });
     updateEstimate();
   }
   function updateEstimate() {
@@ -438,6 +444,10 @@
   $('people').addEventListener('input', (e) => {
     const t = e.target; if (t.dataset.pi === undefined) return;
     people[Number(t.dataset.pi)][t.dataset.pf] = t.value; if (t.dataset.pf === 'type') updateEstimate();
+  });
+  $('people').addEventListener('change', (e) => {
+    const t = e.target; if (t.dataset.pi === undefined) return;
+    people[Number(t.dataset.pi)][t.dataset.pf] = t.value;
   });
 
   $('busGrid').addEventListener('click', (e) => {
@@ -455,7 +465,7 @@
     if ((picked.length || typed) && !confirm('입력한 내용이 사라집니다. 신청하지 않고 돌아갈까요?')) return;
     closeSeatSection();
     ['mainUserName', 'phone', 'depositor'].forEach((id) => ($(id).value = ''));
-    $('boardingStop').value = '';
+    people = [];
     $('consent').checked = false;
     renderTrips();
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -469,8 +479,9 @@
     const comps = people.slice(1).map((p) => p.name.trim().replace(/,/g, ' '));
     if (!name) return alert('대표 신청자 이름을 입력해주세요.');
     if (!phone) return alert('연락처를 입력해주세요.');
-    const boardingStop = $('boardingStop').value.trim();
-    if (!boardingStop) return alert('버스 탑승지를 선택해주세요.');
+    const boardingStops = people.map((p) => (p.stop || '').trim());
+    if (boardingStops.length !== picked.length || boardingStops.some((v) => !v)) return alert('신청자와 동승자 각각의 버스 탑승지를 선택해주세요.');
+    const boardingStop = boardingStops[0];
     if (!$('consent').checked) return alert('개인정보 수집·이용에 동의해 주세요.');
     if (!picked.length) return alert('좌석을 1개 이상 선택해주세요.');
     if (comps.some((n) => !n)) return alert('동반인 이름을 모두 입력해주세요.');
@@ -479,7 +490,7 @@
     if (picked.length !== before) return;
     $('submitBtn').disabled = true;
     const { data, error } = await db.rpc('reserve_seats', { p_bus_id: curBusId, p_name: name, p_phone: phone,
-      p_depositor: $('depositor').value, p_companions: comps.join(', '), p_boarding_stop: boardingStop, p_seats: [...picked].sort((a, b) => a - b), p_types: people.map((p) => p.type) });
+      p_depositor: $('depositor').value, p_companions: comps.join(', '), p_boarding_stop: boardingStop, p_boarding_stops_per_person: boardingStops, p_seats: [...picked], p_types: people.map((p) => p.type) });
     $('submitBtn').disabled = false;
     picked = []; people = [];
     if (error) { alert(error.message); return loadSeats(); }
@@ -488,7 +499,7 @@
     if (data.postpaid) alert(`예약이 확정되었습니다.\n입력하신 연락처로 안내 문자가 발송됩니다.\n회비: ${won(data.amount, '담당자에게 문의')} (후불, 현장에서 납부)`);
     else alert(`예약 신청이 접수되었습니다.\n입력하신 연락처로 안내 문자가 발송됩니다.\n입금 금액: ${won(data.amount, '담당자에게 문의')}\n입금 계좌: ${c.bank_account ? `${c.bank_name} ${c.bank_account} (${c.bank_holder})` : '담당자에게 문의'}\n입금 기한: ${fmt(data.expires_at)}\n\n입금이 확인되면 좌석이 확정되고, 기한이 지나면 가배정이 자동으로 풀립니다.`);
     ['mainUserName', 'phone', 'depositor'].forEach((id) => ($(id).value = ''));
-    $('boardingStop').value = '';
+    people = [];
     $('consent').checked = false;
     // 신청이 끝나면 첫 화면(산행 목록)으로 돌아갑니다
     $('seatSection').classList.add('hidden');
@@ -575,7 +586,7 @@
         <td class="px-3 py-2 font-medium">${esc(r.main_user_name)}</td>
         <td class="px-3 py-2">${esc(r.phone)}</td>
         <td class="px-3 py-2">${esc(r.depositor_name || r.main_user_name)}</td>
-        <td class="px-3 py-2 font-bold" style="color:#2c6e8f">${esc(r.main_user_name)}<div class="text-xs font-normal text-gray-600">${esc(r.boarding_stop || '-')}</div></td>
+        <td class="px-3 py-2" style="color:#2c6e8f">${[r.main_user_name, ...(r.companion_names ? String(r.companion_names).split(',').map(x => x.trim()).filter(Boolean) : [])].map((nm, i) => `<div class="font-semibold">${esc(nm)} <span class="text-xs font-normal text-gray-600">(${esc((r.boarding_stops_per_person || [r.boarding_stop || '-'])[i] || r.boarding_stop || '-')})</span></div>`).join('')}</td>
         <td class="px-3 py-2 whitespace-nowrap">${won(r.amount, '-')}</td>
         <td class="px-3 py-2 text-gray-600">${esc(peopleList(r))}</td>
         <td class="px-3 py-2 whitespace-nowrap"><span class="px-2 py-0.5 rounded text-xs ${st}">${lb}</span>
@@ -583,7 +594,7 @@
         <td class="px-3 py-2 whitespace-nowrap">
           ${r.status === 'pending' || r.status === 'expired' ? `<button data-act="confirm" data-id="${r.id}" class="btn sm">입금 확정</button>` : ''}
           ${r.status === 'pending' || r.status === 'confirmed' ? `<button data-act="cancel" data-id="${r.id}" class="btn line sm ml-1">예약 취소</button>` : ''}
-          ${(['bus45','bus28'].includes(r.buses?.vehicle_type) && (r.status === 'pending' || r.status === 'confirmed')) ? `<button data-act="assignfirst" data-id="${r.id}" class="btn alt sm ml-1">1열 배정</button>` : ''}
+          ${(['bus45','bus28'].includes(r.buses?.vehicle_type) && (r.status === 'pending' || r.status === 'confirmed')) ? (() => { const cap = r.buses.vehicle_type === 'bus28' ? 3 : 4; const nums = String(r.seat_numbers || '').split(',').map(Number).filter(Boolean); const firstAssigned = nums.length === Number(r.headcount) && nums.every(n => n >= 1 && n <= cap); return firstAssigned ? `<button data-act="unassignfirst" data-id="${r.id}" class="btn line sm ml-1">1열 배정 취소</button>` : `<button data-act="assignfirst" data-id="${r.id}" class="btn alt sm ml-1">1열 배정</button>`; })() : ''}
         </td></tr>`;
     }).join('') : '<tr><td colspan="10" class="px-3 py-3 text-center text-gray-500">조건에 맞는 신청자가 없습니다.</td></tr>';
   }
@@ -605,6 +616,11 @@
       const { error } = await db.rpc('assign_first_row', { p_reservation_id: id, p_seat_numbers: arr });
       if (error) return alert(error.message);
       alert('1열 좌석이 배정되었습니다.');
+    } else if (b.dataset.act === 'unassignfirst') {
+      if (!confirm('1열 배정을 취소하고, 현재 비어 있는 일반 좌석을 찾아 자동 재배정할까요?')) return;
+      const { error } = await db.rpc('unassign_first_row', { p_reservation_id: id });
+      if (error) return alert(error.message);
+      alert('1열 배정을 취소하고 빈 일반 좌석으로 재배정했습니다.');
     } else {
       if (!confirm('이 예약을 취소하고 좌석을 비울까요?')) return;
       const { error } = await db.rpc('cancel_reservation', { p_id: id }); if (error) return alert(error.message);
@@ -618,7 +634,7 @@
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const out = [['산악회', '산행', '호차', '신청자', '연락처', '입금자명', '인원', '탑승지', '좌석(내부)', '입금액', '탑승자(구분)', '상태', '입금기한', '신청일시'].map(q).join(',')];
     rows.forEach((r) => out.push([r.buses?.trips?.clubs?.name, r.buses?.trips?.title, r.buses?.bus_no, r.main_user_name, r.phone,
-      r.depositor_name || r.main_user_name, r.headcount, r.boarding_stop || '', r.seat_numbers, r.amount, peopleList(r), statusLabel(r),
+      r.depositor_name || r.main_user_name, r.headcount, [r.main_user_name, ...(r.companion_names ? String(r.companion_names).split(',').map(x => x.trim()).filter(Boolean) : [])].map((nm, i) => `${nm}: ${(r.boarding_stops_per_person || [r.boarding_stop || '-'])[i] || r.boarding_stop || '-'}`).join(' / '), r.seat_numbers, r.amount, peopleList(r), statusLabel(r),
       fmt(r.expires_at), fmt(r.created_at)].map(q).join(',')));
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob(['\ufeff' + out.join('\r\n')], { type: 'text/csv;charset=utf-8;' }));
