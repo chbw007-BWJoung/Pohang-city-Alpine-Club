@@ -594,7 +594,7 @@
         <td class="px-3 py-2 whitespace-nowrap">
           ${r.status === 'pending' || r.status === 'expired' ? `<button data-act="confirm" data-id="${r.id}" class="btn sm">입금 확정</button>` : ''}
           ${r.status === 'pending' || r.status === 'confirmed' ? `<button data-act="cancel" data-id="${r.id}" class="btn line sm ml-1">예약 취소</button>` : ''}
-          ${(['bus45','bus28'].includes(r.buses?.vehicle_type) && (r.status === 'pending' || r.status === 'confirmed')) ? (() => { const cap = r.buses.vehicle_type === 'bus28' ? 3 : 4; const nums = String(r.seat_numbers || '').split(',').map(Number).filter(Boolean); const firstAssigned = nums.length === Number(r.headcount) && nums.every(n => n >= 1 && n <= cap); return firstAssigned ? `<button data-act="unassignfirst" data-id="${r.id}" class="btn line sm ml-1">1열 배정 취소</button>` : `<button data-act="assignfirst" data-id="${r.id}" class="btn alt sm ml-1">1열 배정</button>`; })() : ''}
+          ${(['bus45','bus28'].includes(r.buses?.vehicle_type) && (r.status === 'pending' || r.status === 'confirmed')) ? `<button data-act="assignfirstpeople" data-id="${r.id}" class="btn alt sm ml-1">1열 개별 배정</button><button data-act="unassignfirstpeople" data-id="${r.id}" class="btn line sm ml-1">1열 일부 취소</button>` : ''}
         </td></tr>`;
     }).join('') : '<tr><td colspan="10" class="px-3 py-3 text-center text-gray-500">조건에 맞는 신청자가 없습니다.</td></tr>';
   }
@@ -606,21 +606,40 @@
     const id = Number(b.dataset.id);
     if (b.dataset.act === 'confirm') {
       const { error } = await db.rpc('confirm_reservation', { p_id: id }); if (error) return alert(error.message);
-    } else if (b.dataset.act === 'assignfirst') {
+    } else if (b.dataset.act === 'assignfirstpeople') {
       const r = resRows.find((x) => x.id === id);
-      const cap = r?.buses?.vehicle_type === 'bus28' ? 3 : 4;
-      const nums = prompt(`1열에 배정할 좌석번호를 쉼표로 입력하세요.\n이 신청은 ${r?.headcount || 1}명이며, 1열 최대 ${cap}석입니다.\n예: ${r?.headcount === 1 ? '1' : '1,2'}`, String(r?.seat_numbers || '').split(',').slice(0, r?.headcount || 1).join(','));
-      if (nums === null) return;
-      const arr = nums.split(/[,\s]+/).map(Number).filter(Boolean);
-      if (!arr.length) return alert('좌석번호를 입력해주세요.');
-      const { error } = await db.rpc('assign_first_row', { p_reservation_id: id, p_seat_numbers: arr });
+      if (!r) return alert('예약 정보를 찾을 수 없습니다.');
+      const cap = r.buses?.vehicle_type === 'bus28' ? 3 : 4;
+      const names = [r.main_user_name, ...(r.companion_names ? String(r.companion_names).split(',').map(x => x.trim()).filter(Boolean) : [])];
+      const current = String(r.seat_numbers || '').split(',').map(Number).filter(Boolean);
+      const peopleText = names.map((n, i) => `${i + 1}. ${n} (현재 좌석 ${current[i] || '-'})`).join('\n');
+      const pairs = prompt(`1열에 배정할 사람과 좌석을 입력하세요.\n사람번호:좌석번호 형식이며 여러 명은 쉼표로 구분합니다.\n\n${peopleText}\n\n예: 1:1,3:2\n(1번 신청자→1번 좌석, 3번 동승자→2번 좌석)`, '');
+      if (pairs === null) return;
+      const personIndexes = [], seatNumbers = [];
+      for (const part of pairs.split(',')) {
+        const m = part.trim().match(/^(\d+)\s*:\s*(\d+)$/);
+        if (!m) return alert('입력 형식이 올바르지 않습니다. 예: 1:1,3:2');
+        personIndexes.push(Number(m[1])); seatNumbers.push(Number(m[2]));
+      }
+      if (!personIndexes.length || personIndexes.some(n => n < 1 || n > Number(r.headcount)) || seatNumbers.some(n => n < 1 || n > cap)) return alert(`사람 번호는 1~${r.headcount}, 1열 좌석은 1~${cap} 범위로 입력해주세요.`);
+      const { error } = await db.rpc('assign_first_row_people', { p_reservation_id: id, p_person_indexes: personIndexes, p_seat_numbers: seatNumbers });
       if (error) return alert(error.message);
-      alert('1열 좌석이 배정되었습니다.');
-    } else if (b.dataset.act === 'unassignfirst') {
-      if (!confirm('1열 배정을 취소하고, 현재 비어 있는 일반 좌석을 찾아 자동 재배정할까요?')) return;
-      const { error } = await db.rpc('unassign_first_row', { p_reservation_id: id });
+      alert('선택한 사람만 1열에 배정했습니다. 나머지 인원은 기존 좌석을 유지합니다.');
+    } else if (b.dataset.act === 'unassignfirstpeople') {
+      const r = resRows.find((x) => x.id === id);
+      if (!r) return alert('예약 정보를 찾을 수 없습니다.');
+      const current = String(r.seat_numbers || '').split(',').map(Number).filter(Boolean);
+      const cap = r.buses?.vehicle_type === 'bus28' ? 3 : 4;
+      const names = [r.main_user_name, ...(r.companion_names ? String(r.companion_names).split(',').map(x => x.trim()).filter(Boolean) : [])];
+      const first = current.map((n, i) => n >= 1 && n <= cap ? `${i + 1}. ${names[i]} (1열 ${n}번)` : null).filter(Boolean);
+      if (!first.length) return alert('현재 1열에 배정된 사람이 없습니다.');
+      const indexes = prompt(`일반 좌석으로 이동할 사람 번호를 입력하세요.\n${first.join('\n')}\n\n예: 1,3`, first.map(x => x.match(/^(\d+)/)[1]).join(','));
+      if (indexes === null) return;
+      const arr = indexes.split(/[,\s]+/).map(Number).filter(Boolean);
+      if (!arr.length || arr.some(n => n < 1 || n > Number(r.headcount))) return alert('사람 번호를 확인해주세요.');
+      const { error } = await db.rpc('unassign_first_row_people', { p_reservation_id: id, p_person_indexes: arr });
       if (error) return alert(error.message);
-      alert('1열 배정을 취소하고 빈 일반 좌석으로 재배정했습니다.');
+      alert('선택한 사람을 빈 일반 좌석으로 이동했습니다.');
     } else {
       if (!confirm('이 예약을 취소하고 좌석을 비울까요?')) return;
       const { error } = await db.rpc('cancel_reservation', { p_id: id }); if (error) return alert(error.message);
