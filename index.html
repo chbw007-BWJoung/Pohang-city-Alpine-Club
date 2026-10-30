@@ -26,6 +26,15 @@
     .seat.is-mine { background: #2c6e8f; color: #fff; border-color: #2c6e8f; }
     button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #2c6e8f; outline-offset: 2px; }
     th { white-space: nowrap; }
+    /* 관리자 좌석 배치표: 드래그 및 모바일 터치 지원 */
+    .admin-seat { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.18rem; width:5.8rem; min-width:5.8rem; min-height:5.2rem; padding:.35rem; border:1px solid #aab5ae; border-radius:.65rem; background:#fff; font-size:.75rem; text-align:center; }
+    .admin-seat.is-first { border:2px solid #2c6e8f; background:#edf6fa; }
+    .admin-seat.is-occupied { background:#f2f5f2; }
+    .admin-seat-person { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:.2rem .3rem; border-radius:.35rem; background:#2c6e8f; color:#fff; font-weight:700; cursor:grab; user-select:none; -webkit-user-select:none; touch-action:none; }
+    .admin-seat-person.dragging { opacity:.45; outline:2px dashed #1d4034; }
+    .admin-seat-person.is-selected { outline:3px solid #e0a800; outline-offset:2px; }
+    .admin-seat-empty { color:#7b857f; font-size:.7rem; }
+    #adminSeatBoard { touch-action:pan-x pan-y; }
   </style>
 </head>
 <body>
@@ -609,6 +618,7 @@
   }
   /* ================= 관리자 좌석 드래그·터치 이동 ================= */
   let adminSeatDrag = null;
+  let adminSeatSelectedPerson = null;
   function renderAdminSeatBusOptions() {
     const sel = $('adminSeatBus'); if (!sel) return;
     const keep = sel.value;
@@ -624,6 +634,7 @@
   async function loadAdminSeatBoard() {
     const busId = Number($('adminSeatBus').value);
     const host = $('adminSeatBoard'); $('adminSeatBoardMsg').textContent = '';
+    adminSeatDrag = null; adminSeatSelectedPerson = null;
     if (!busId) { host.innerHTML = '<p class="text-sm text-gray-500">버스를 선택하면 좌석 배치표가 표시됩니다.</p>'; return; }
     host.innerHTML = '<p class="text-sm text-gray-500">좌석 정보를 불러오는 중...</p>';
     const [{data: seatData,error: seatErr},{data: bookingData,error: bookingErr}] = await Promise.all([
@@ -641,7 +652,7 @@
     });
     const rows={}; (seatData||[]).forEach(seat=>(rows[seat.row_number] ||= []).push(seat));
     const rowKeys=Object.keys(rows).map(Number).sort((a,b)=>a-b);
-    host.innerHTML = rowKeys.map(row=>`<div class="flex justify-center gap-2 min-w-max">${rows[row].map(seat=>{
+    host.innerHTML = '<p class="text-xs text-gray-600 mb-2">PC: 이름을 끌어 빈 좌석에 놓으세요. 휴대폰: 이름을 끌거나, 이름을 한 번 누른 뒤 빈 좌석을 누르세요.</p>' + rowKeys.map(row=>`<div class="flex justify-center gap-2 min-w-max mb-2">${rows[row].map(seat=>{
       const o=occupied[seat.seat_number], first=seat.row_number===1;
       return `<div class="admin-seat ${o?'is-occupied':''} ${first?'is-first':''}" data-admin-seat="${seat.seat_number}" data-bus="${busId}" aria-label="${seat.seat_number}번 좌석">
         <span class="text-xs text-gray-500">${seat.seat_number}번${first?' · 1열':''}</span>
@@ -650,17 +661,39 @@
     }).join('')}</div>`).join('') || '<p class="text-sm text-gray-500">좌석 정보가 없습니다.</p>';
   }
 
-  // Pointer Events: 마우스 드래그와 모바일 터치 이동을 같은 동작으로 처리합니다.
+  // Pointer Events: 마우스/터치 드래그와 모바일의 탭-후-탭 이동을 모두 지원합니다.
   $('adminSeatBoard').addEventListener('pointerdown',e=>{
-    const person=e.target.closest('.admin-seat-person'); if(!person || e.button===2)return;
-    adminSeatDrag={reservationId:Number(person.dataset.reservation),personIndex:Number(person.dataset.person),sourceSeat:Number(person.dataset.sourceSeat),pointerId:e.pointerId,element:person};
-    person.classList.add('dragging');
+    const person=e.target.closest('.admin-seat-person');
+    const seat=e.target.closest('[data-admin-seat]');
+    if(person && e.button!==2){
+      e.preventDefault();
+      adminSeatDrag={reservationId:Number(person.dataset.reservation),personIndex:Number(person.dataset.person),sourceSeat:Number(person.dataset.sourceSeat),pointerId:e.pointerId,element:person};
+      person.classList.add('dragging');
+      return;
+    }
+    if(!person && seat && adminSeatSelectedPerson){
+      adminSeatDrag={...adminSeatSelectedPerson,pointerId:e.pointerId,tapTarget:Number(seat.dataset.adminSeat),isTapMove:true};
+    }
   });
   document.addEventListener('pointerup',async e=>{
-    if(!adminSeatDrag || adminSeatDrag.pointerId===undefined || adminSeatDrag.pointerId!==e.pointerId)return;
+    if(!adminSeatDrag || adminSeatDrag.pointerId!==e.pointerId)return;
     const drag=adminSeatDrag; adminSeatDrag=null; drag.element?.classList.remove('dragging');
+    if(drag.isTapMove){
+      adminSeatSelectedPerson=null;
+      document.querySelectorAll('.admin-seat-person.is-selected').forEach(el=>el.classList.remove('is-selected'));
+      await moveAdminSeatPerson({...drag,targetSeat:drag.tapTarget});
+      return;
+    }
     const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('[data-admin-seat]');
-    if(target) await moveAdminSeatPerson({...drag,targetSeat:Number(target.dataset.adminSeat)});
+    const targetSeat=Number(target?.dataset.adminSeat);
+    if(targetSeat===drag.sourceSeat){
+      adminSeatSelectedPerson={reservationId:drag.reservationId,personIndex:drag.personIndex,sourceSeat:drag.sourceSeat};
+      document.querySelectorAll('.admin-seat-person.is-selected').forEach(el=>el.classList.remove('is-selected'));
+      drag.element?.classList.add('is-selected');
+      $('adminSeatBoardMsg').textContent='이동할 사람을 선택했습니다. 빈 좌석을 누르거나 끌어서 이동하세요.';
+      return;
+    }
+    if(targetSeat){ adminSeatSelectedPerson=null; await moveAdminSeatPerson({...drag,targetSeat}); }
   });
   document.addEventListener('pointercancel',()=>{ if(adminSeatDrag?.element)adminSeatDrag.element.classList.remove('dragging'); adminSeatDrag=null; });
 
