@@ -394,7 +394,6 @@ async function loadSeats(quiet = false) {
     if (!bus) return;
     await db.rpc('release_expired_reservations');
     
-    // 1. 현재 버스의 좌석 정보와 '해당 버스에 속한 확정/대기 예약' 정보를 함께 조회
     const [{ data, error }, { data: rs, error: rsErr }] = await Promise.all([
       db.from('bus_seats').select('seat_number, row_number, blocked, status').eq('bus_id', bus).order('seat_number'),
       db.from('reservations').select('seat_numbers, main_user_name, companion_names, boarding_stop, boarding_stops_per_person, status').eq('bus_id', bus).in('status', ['pending', 'confirmed'])
@@ -406,11 +405,9 @@ async function loadSeats(quiet = false) {
       return; 
     }
     
-    // 2. 예약된 좌석 번호와 사용자 이름·탑승지 정보를 매핑할 맵(occ) 생성
     const occ = {};
     if (!rsErr && rs) {
       rs.forEach(r => {
-        // 예약된 좌석 번호들을 쉼표 기준으로 분리하여 숫자로 변환
         const nums = String(r.seat_numbers || '').split(',').map(n => Number(n.trim())).filter(Boolean);
         const names = [r.main_user_name, ...(r.companion_names ? String(r.companion_names).split(',').map(x => x.trim()).filter(Boolean) : [])];
         const stops = Array.isArray(r.boarding_stops_per_person) && r.boarding_stops_per_person.length ? r.boarding_stops_per_person : [];
@@ -426,6 +423,11 @@ async function loadSeats(quiet = false) {
         });
       });
     }
+
+    seats = data; 
+    seatOccupants = occ; // 전역 객체에 완벽히 주입
+    renderSeats();
+  }
 
     const changed = JSON.stringify(data) !== JSON.stringify(seats) || JSON.stringify(occ) !== JSON.stringify(seatOccupants);
     if (quiet && !changed) return;
@@ -443,14 +445,20 @@ async function loadSeats(quiet = false) {
   }
 
   function seatBtn(s) {
-    const blocked = s.blocked, mine = picked.includes(s.seat_number), o = seatOccupants[s.seat_number];
-    const effective = o?.status || s.status;
+    // seatOccupants에서 현재 좌석 번호에 해당하는 예약자 정보(o)를 확실하게 가져옵니다.
+    const o = seatOccupants[s.seat_number] || seatOccupants[String(s.seat_number)];
+    const blocked = s.blocked;
+    const mine = picked.includes(s.seat_number);
+    
+    // 예약자가 있으면 확정/대기 상태에 맞는 클래스 부여
+    const effective = o ? o.status : s.status;
     const cls = blocked ? 'is-blocked' : mine ? 'is-mine' : effective === 'locked' ? 'is-pending' : effective === 'confirmed' ? 'is-taken' : '';
     const label = blocked ? '선택 불가' : mine ? '선택함' : o ? `${o.name} / ${o.stop}` : '빈자리';
+    
     const vt = curTrip?.buses.find((b) => b.id === curBusId)?.vehicle_type || '';
     const driver = (vt === 'van10' || vt === 'car5') && s.seat_number === 1;
     
-    // 수정된 렌더링 로직: 예약자 정보(o)가 있으면 무조건 이름과 탑승지를 출력합니다.
+    // [핵심] 예약자 정보(o)가 존재하면 무조건 이름과 탑승지를 표시합니다.
     let body = '';
     if (o) {
       body = `<span class="seat-no">${s.seat_number}번${driver ? ' · 운전석' : ''}</span><span class="seat-name">${esc(o.name)}</span><span class="seat-stop">${esc(o.stop)}</span>`;
@@ -459,6 +467,10 @@ async function loadSeats(quiet = false) {
     } else {
       body = `<span class="seat-no">${s.seat_number}번${driver ? ' · 운전석' : ''}</span><span class="seat-name">${driver ? '운전자 지정 가능' : '빈자리'}</span>`;
     }
+
+    return `<button type="button" class="seat ${cls}" data-seat="${s.seat_number}" aria-label="${s.seat_number}번 좌석 ${esc(label)}"
+      ${blocked || (effective !== 'available' && !mine) ? 'disabled' : ''}>${body}</button>`;
+  }
 
     return `<button type="button" class="seat ${cls}" data-seat="${s.seat_number}" aria-label="${s.seat_number}번 좌석 ${esc(label)}"
       ${blocked || effective !== 'available' ? 'disabled' : ''}>${body}</button>`;
