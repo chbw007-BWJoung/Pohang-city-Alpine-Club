@@ -389,7 +389,7 @@
 
   /* ================= 좌석표 ================= */
   let seatOccupants = {};
-  async function loadSeats(quiet = false) {
+async function loadSeats(quiet = false) {
     const bus = curBusId;
     await db.rpc('release_expired_reservations');
     const [{ data, error }, { data: rs }] = await Promise.all([
@@ -398,13 +398,25 @@
     ]);
     if (bus !== curBusId) return;
     if (error || !data.length) { if (!quiet) $('busGrid').innerHTML = '<p class="text-center text-sm text-gray-500">좌석 정보가 없습니다.</p>'; return; }
+    
     const occ = {};
     (rs || []).forEach(r => {
-      const nums = String(r.seat_numbers || '').split(',').map(Number).filter(Boolean);
+      // 쉼표로 구분된 좌석 번호를 안전하게 숫자로 변환
+      const nums = String(r.seat_numbers || '').split(',').map(n => Number(n.trim())).filter(Boolean);
       const names = [r.main_user_name, ...(r.companion_names ? String(r.companion_names).split(',').map(x => x.trim()).filter(Boolean) : [])];
-      const stops = Array.isArray(r.boarding_stops_per_person) ? r.boarding_stops_per_person : [];
-      nums.forEach((n, i) => { occ[n] = { name: names[i] || r.main_user_name || '-', stop: stops[i] || r.boarding_stop || '-', status: r.status }; });
+      const stops = Array.isArray(r.boarding_stops_per_person) && r.boarding_stops_per_person.length ? r.boarding_stops_per_person : [];
+      
+      nums.forEach((n, i) => {
+        if (n) {
+          occ[n] = {
+            name: names[i] || r.main_user_name || '-',
+            stop: stops[i] || r.boarding_stop || '-',
+            status: r.status
+          };
+        }
+      });
     });
+
     const changed = JSON.stringify(data) !== JSON.stringify(seats) || JSON.stringify(occ) !== JSON.stringify(seatOccupants);
     if (quiet && !changed) return;
     const lost = picked.filter((n) => !data.some((s) => s.seat_number === n && s.status === 'available'));
