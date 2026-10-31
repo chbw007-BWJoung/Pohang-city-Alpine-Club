@@ -450,13 +450,16 @@ async function loadSeats(quiet = false) {
     const vt = curTrip?.buses.find((b) => b.id === curBusId)?.vehicle_type || '';
     const driver = (vt === 'van10' || vt === 'car5') && s.seat_number === 1;
     
-    // 수정된 부분: o(예약자 정보)가 있으면 이름과 탑승지를 정확히 표시하도록 수정
-    const body = blocked 
-      ? (o ? `<span class="seat-no">${s.seat_number}번</span><span class="seat-name">${esc(o.name)}</span><span class="seat-stop">${esc(o.stop)}</span>` : `<span class="seat-no">${s.seat_number}번</span><span class="seat-name">관리자 배정</span>`)
-      : o 
-      ? `<span class="seat-no">${s.seat_number}번${driver ? ' · 운전석' : ''}</span><span class="seat-name">${esc(o.name)}</span><span class="seat-stop">${esc(o.stop)}</span>`
-      : `<span class="seat-no">${s.seat_number}번${driver ? ' · 운전석' : ''}</span><span class="seat-name">${driver ? '운전자 지정 가능' : '빈자리'}</span>`;
-      
+    // 수정된 렌더링 로직: 예약자 정보(o)가 있으면 무조건 이름과 탑승지를 출력합니다.
+    let body = '';
+    if (o) {
+      body = `<span class="seat-no">${s.seat_number}번${driver ? ' · 운전석' : ''}</span><span class="seat-name">${esc(o.name)}</span><span class="seat-stop">${esc(o.stop)}</span>`;
+    } else if (blocked) {
+      body = `<span class="seat-no">${s.seat_number}번</span><span class="seat-name">관리자 배정</span>`;
+    } else {
+      body = `<span class="seat-no">${s.seat_number}번${driver ? ' · 운전석' : ''}</span><span class="seat-name">${driver ? '운전자 지정 가능' : '빈자리'}</span>`;
+    }
+
     return `<button type="button" class="seat ${cls}" data-seat="${s.seat_number}" aria-label="${s.seat_number}번 좌석 ${esc(label)}"
       ${blocked || effective !== 'available' ? 'disabled' : ''}>${body}</button>`;
   }
