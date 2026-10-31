@@ -397,7 +397,8 @@ async function loadSeats(quiet = false) {
     // 1. 현재 버스의 좌석 정보와 '해당 버스에 속한 확정/대기 예약' 정보를 함께 조회
     const [{ data, error }, { data: rs, error: rsErr }] = await Promise.all([
       db.from('bus_seats').select('seat_number, row_number, blocked, status').eq('bus_id', bus).order('seat_number'),
-      db.from('reservations').select('seat_numbers, main_user_name, companion_names, boarding_stop, boarding_stops_per_person, status').eq('bus_id', bus).in('status', ['pending', 'confirmed'])
+      // 신청자(비로그인)는 reservations 테이블을 직접 읽을 수 없으므로 공개 조회 함수 사용
+      db.rpc('public_seat_occupants', { p_bus_id: bus })
     ]);
     
     if (bus !== curBusId) return;
@@ -408,24 +409,11 @@ async function loadSeats(quiet = false) {
     
     // 2. 예약된 좌석 번호와 사용자 이름·탑승지 정보를 매핑할 맵(occ) 생성
     const occ = {};
-    if (!rsErr && rs) {
-      rs.forEach(r => {
-        // 예약된 좌석 번호들을 쉼표 기준으로 분리하여 숫자로 변환
-        const nums = String(r.seat_numbers || '').split(',').map(n => Number(n.trim())).filter(Boolean);
-        const names = [r.main_user_name, ...(r.companion_names ? String(r.companion_names).split(',').map(x => x.trim()).filter(Boolean) : [])];
-        const stops = Array.isArray(r.boarding_stops_per_person) && r.boarding_stops_per_person.length ? r.boarding_stops_per_person : [];
-        
-        nums.forEach((n, i) => {
-          if (n) {
-            occ[n] = {
-              name: names[i] || r.main_user_name || '-',
-              stop: stops[i] || r.boarding_stop || '-',
-              status: r.status
-            };
-          }
-        });
-      });
-    }
+    if (rsErr) console.warn('좌석 신청자 정보 조회 실패 (PUBLIC_SEAT_OCCUPANTS_MIGRATION.sql 실행 여부 확인):', rsErr.message);
+    (rs || []).forEach((r) => {
+      const n = Number(r.seat_number);
+      if (n) occ[n] = { name: r.name || '-', stop: r.stop || '-', status: r.status };
+    });
 
     const changed = JSON.stringify(data) !== JSON.stringify(seats) || JSON.stringify(occ) !== JSON.stringify(seatOccupants);
     if (quiet && !changed) return;
@@ -444,7 +432,7 @@ async function loadSeats(quiet = false) {
 
   function seatBtn(s) {
     const blocked = s.blocked, mine = picked.includes(s.seat_number), o = seatOccupants[s.seat_number];
-    const effective = o?.status || s.status;
+    const effective = o ? (o.status === 'confirmed' ? 'confirmed' : 'locked') : s.status;
     const cls = blocked ? 'is-blocked' : mine ? 'is-mine' : effective === 'locked' ? 'is-pending' : effective === 'confirmed' ? 'is-taken' : '';
     const label = blocked ? '선택 불가' : mine ? '선택함' : o ? `${o.name} / ${o.stop}` : '빈자리';
     const vt = curTrip?.buses.find((b) => b.id === curBusId)?.vehicle_type || '';
