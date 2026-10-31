@@ -661,34 +661,54 @@
   $('adminSeatBus').addEventListener('change', loadAdminSeatBoard);
 
   async function loadAdminSeatBoard() {
-    const busId = Number($('adminSeatBus').value);
-    const host = $('adminSeatBoard'); $('adminSeatBoardMsg').textContent = '';
-    adminSeatDrag = null; adminSeatSelectedPerson = null;
-    if (!busId) { host.innerHTML = '<p class="text-sm text-gray-500">버스를 선택하면 좌석 배치표가 표시됩니다.</p>'; return; }
-    host.innerHTML = '<p class="text-sm text-gray-500">좌석 정보를 불러오는 중...</p>';
-    const [{data: seatData,error: seatErr},{data: bookingData,error: bookingErr}] = await Promise.all([
-      db.from('bus_seats').select('seat_number,row_number,blocked,status').eq('bus_id',busId).order('row_number').order('seat_number'),
-      db.from('reservations').select('id,seat_numbers,main_user_name,companion_names,boarding_stop,boarding_stops_per_person,status,headcount').eq('bus_id',busId).in('status',['pending','confirmed'])
-    ]);
-    if (String(Number($('adminSeatBus').value)) !== String(busId)) return;
-    if (seatErr || bookingErr) { host.innerHTML = `<p class="text-sm text-red-600">좌석표를 불러오지 못했습니다: ${esc(seatErr?.message || bookingErr?.message)}</p>`; return; }
-    const occupied = {};
-    (bookingData || []).forEach(r => {
-      const nums=String(r.seat_numbers||'').split(',').map(Number);
-      const names=[r.main_user_name,...(r.companion_names?String(r.companion_names).split(',').map(x=>x.trim()).filter(Boolean):[])];
-      const stops=Array.isArray(r.boarding_stops_per_person)?r.boarding_stops_per_person:[];
-      nums.forEach((n,i)=>{ if(n) occupied[n]={reservationId:r.id,personIndex:i+1,name:names[i]||r.main_user_name||'-',stop:stops[i]||r.boarding_stop||'-',status:r.status}; });
+  const busId = Number($('adminSeatBus').value);
+  const host = $('adminSeatBoard'); $('adminSeatBoardMsg').textContent = '';
+  adminSeatDrag = null; adminSeatSelectedPerson = null;
+  if (!busId) { host.innerHTML = '<p class="text-sm text-gray-500">버스를 선택하면 좌석 배치표가 표시됩니다.</p>'; return; }
+  host.innerHTML = '<p class="text-sm text-gray-500">좌석 정보를 불러오는 중...</p>';
+  
+  const [{data: seatData, error: seatErr}, {data: bookingData, error: bookingErr}] = await Promise.all([
+    db.from('bus_seats').select('seat_number,row_number,blocked,status').eq('bus_id', busId).order('row_number').order('seat_number'),
+    db.from('reservations').select('id,seat_numbers,main_user_name,companion_names,boarding_stop,boarding_stops_per_person,status,headcount').eq('bus_id', busId).in('status', ['pending','confirmed'])
+  ]);
+  
+  if (String(Number($('adminSeatBus').value)) !== String(busId)) return;
+  if (seatErr || bookingErr) { host.innerHTML = `<p class="text-sm text-red-600">좌석표를 불러오지 못했습니다: ${esc(seatErr?.message || bookingErr?.message)}</p>`; return; }
+  
+  const occupied = {};
+  (bookingData || []).forEach(r => {
+    // 쉼표로 구분된 좌석 번호 배열 파싱
+    const nums = String(r.seat_numbers || '').split(',').map(n => Number(n.trim())).filter(Boolean);
+    const names = [r.main_user_name, ...(r.companion_names ? String(r.companion_names).split(',').map(x => x.trim()).filter(Boolean) : [])];
+    const stops = Array.isArray(r.boarding_stops_per_person) && r.boarding_stops_per_person.length ? r.boarding_stops_per_person : [];
+    
+    nums.forEach((n, i) => {
+      if (n) {
+        occupied[n] = {
+          reservationId: r.id,
+          personIndex: i + 1,
+          name: names[i] || r.main_user_name || '-',
+          // 각 사람별 탑승지가 없으면 대표 탑승지(boarding_stop) 사용
+          stop: stops[i] || r.boarding_stop || '-',
+          status: r.status
+        };
+      }
     });
-    const rows={}; (seatData||[]).forEach(seat=>(rows[seat.row_number] ||= []).push(seat));
-    const rowKeys=Object.keys(rows).map(Number).sort((a,b)=>a-b);
-    host.innerHTML = '<p class="text-xs text-gray-600 mb-2">PC: 이름을 끌어 빈 좌석에 놓으세요. 휴대폰: 이름을 끌거나, 이름을 한 번 누른 뒤 빈 좌석을 누르세요.</p>' + rowKeys.map(row=>`<div class="flex justify-center gap-2 min-w-max mb-2">${rows[row].map(seat=>{
-      const o=occupied[seat.seat_number], first=seat.row_number===1;
-      return `<div class="admin-seat ${o?'is-occupied':''} ${first?'is-first':''}" data-admin-seat="${seat.seat_number}" data-bus="${busId}" aria-label="${seat.seat_number}번 좌석">
-        <span class="text-xs text-gray-500">${seat.seat_number}번${first?' · 1열':''}</span>
-        ${o?`<span class="admin-seat-person" data-reservation="${o.reservationId}" data-person="${o.personIndex}" data-source-seat="${seat.seat_number}" title="${esc(o.name)} · ${esc(o.stop)}">${esc(o.name)}</span><span class="text-[10px] font-normal">${esc(o.stop)}</span>`:'<span class="admin-seat-empty">빈자리</span>'}
+  });
+
+  const rows = {}; 
+  (seatData || []).forEach(seat => (rows[seat.row_number] ||= []).push(seat));
+  const rowKeys = Object.keys(rows).map(Number).sort((a, b) => a - b);
+  
+  host.innerHTML = '<p class="text-xs text-gray-600 mb-2">PC: 이름을 끌어 빈 좌석에 놓으세요. 휴대폰: 이름을 끌거나, 이름을 한 번 누른 뒤 빈 좌석을 누르세요.</p>' + 
+    rowKeys.map(row => `<div class="flex justify-center gap-2 min-w-max mb-2">${rows[row].map(seat => {
+      const o = occupied[seat.seat_number], first = seat.row_number === 1;
+      return `<div class="admin-seat ${o ? 'is-occupied' : ''} ${first ? 'is-first' : ''}" data-admin-seat="${seat.seat_number}" data-bus="${busId}" aria-label="${seat.seat_number}번 좌석">
+        <span class="text-xs text-gray-500">${seat.seat_number}번${first ? ' · 1열' : ''}</span>
+        ${o ? `<span class="admin-seat-person" data-reservation="${o.reservationId}" data-person="${o.personIndex}" data-source-seat="${seat.seat_number}" title="${esc(o.name)} · ${esc(o.stop)}">${esc(o.name)}</span><span class="text-[10px] font-normal">${esc(o.stop)}</span>` : '<span class="admin-seat-empty">빈자리</span>'}
       </div>`;
     }).join('')}</div>`).join('') || '<p class="text-sm text-gray-500">좌석 정보가 없습니다.</p>';
-  }
+}
 
   // Pointer Events: 드래그 시 자기 자신을 무시하도록 pointerEvents 제어 추가
   $('adminSeatBoard').addEventListener('pointerdown',e=>{
