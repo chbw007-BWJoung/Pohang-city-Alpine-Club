@@ -111,7 +111,22 @@
     <div id="adminPanel" class="hidden space-y-6">
       <div class="flex justify-between items-center">
         <p id="whoami" class="text-sm text-gray-600"></p>
-        <button id="logoutBtn" class="btn line sm">로그아웃</button>
+        <div class="flex gap-2 shrink-0">
+          <button id="pwToggleBtn" class="btn line sm" aria-expanded="false" aria-controls="pwBox">비밀번호 변경</button>
+          <button id="logoutBtn" class="btn line sm">로그아웃</button>
+        </div>
+      </div>
+
+      <div id="pwBox" class="card space-y-3 max-w-sm hidden">
+        <h2 class="text-lg font-bold">비밀번호 변경</h2>
+        <p class="text-xs text-gray-500">처음 받은 비밀번호는 로그인 후 여기서 본인이 쓸 비밀번호로 바꿔주세요. (8자 이상)</p>
+        <input type="password" id="pwCurrent" autocomplete="current-password" class="inp" placeholder="현재 비밀번호" aria-label="현재 비밀번호">
+        <input type="password" id="pwNew" autocomplete="new-password" minlength="8" class="inp" placeholder="새 비밀번호 (8자 이상)" aria-label="새 비밀번호">
+        <input type="password" id="pwConfirm" autocomplete="new-password" minlength="8" class="inp" placeholder="새 비밀번호 확인" aria-label="새 비밀번호 확인">
+        <div class="flex gap-2">
+          <button id="pwSaveBtn" class="btn flex-1">변경하기</button>
+          <button id="pwCancelBtn" class="btn line">취소</button>
+        </div>
       </div>
 
       <div class="card">
@@ -564,7 +579,8 @@ async function loadSeats(quiet = false) {
     if (!data.session) return;
     const r = await db.rpc('my_access'); access = r.data || { super: false, clubs: [] };
     const none = !access.super && !access.clubs.length;
-    $('whoami').textContent = access.super ? '총괄 관리자' : none ? '담당 산악회가 없는 계정입니다. 총괄 관리자에게 지정을 요청하세요.' : '산악회 담당자';
+    const who = data.session.user?.email ? ` (${data.session.user.email})` : '';
+    $('whoami').textContent = (access.super ? '총괄 관리자' + who : none ? '' : '산악회 담당자' + who) || '담당 산악회가 없는 계정입니다. 총괄 관리자에게 지정을 요청하세요.';
     if (none) return;
     const all = (await db.from('clubs').select('*').order('name')).data || [];
     clubs = access.super ? all : all.filter((c) => access.clubs.includes(c.id));
@@ -580,7 +596,43 @@ async function loadSeats(quiet = false) {
     if (error) return alert('로그인하지 못했습니다. 이메일과 비밀번호를 확인해주세요.');
     $('adminPassword').value = ''; refreshAdmin();
   });
-  $('logoutBtn').addEventListener('click', async () => { await db.auth.signOut(); resRows = []; refreshAdmin(); });
+  $('logoutBtn').addEventListener('click', async () => { await db.auth.signOut(); resRows = []; closePwBox(); refreshAdmin(); });
+
+  /* ---- 비밀번호 변경 (로그인한 관리자 본인) ---- */
+  function closePwBox() {
+    ['pwCurrent', 'pwNew', 'pwConfirm'].forEach((id) => { $(id).value = ''; });
+    $('pwBox').classList.add('hidden'); $('pwToggleBtn').setAttribute('aria-expanded', 'false');
+  }
+  $('pwToggleBtn').addEventListener('click', () => {
+    const open = $('pwBox').classList.contains('hidden');
+    if (!open) return closePwBox();
+    $('pwBox').classList.remove('hidden'); $('pwToggleBtn').setAttribute('aria-expanded', 'true'); $('pwCurrent').focus();
+  });
+  $('pwCancelBtn').addEventListener('click', closePwBox);
+  $('pwSaveBtn').addEventListener('click', async () => {
+    const cur = $('pwCurrent').value, nw = $('pwNew').value, cf = $('pwConfirm').value;
+    if (!cur || !nw || !cf) return alert('현재 비밀번호와 새 비밀번호를 모두 입력해주세요.');
+    if (nw.length < 8) return alert('새 비밀번호는 8자 이상으로 정해주세요.');
+    if (nw !== cf) return alert('새 비밀번호와 확인 칸이 서로 다릅니다.');
+    if (nw === cur) return alert('새 비밀번호가 현재 비밀번호와 같습니다.');
+    const btn = $('pwSaveBtn'); btn.disabled = true; btn.textContent = '변경 중...';
+    try {
+      const { data: { user } } = await db.auth.getUser();
+      if (!user?.email) { alert('로그인이 만료되었습니다. 다시 로그인해주세요.'); return refreshAdmin(); }
+      // 현재 비밀번호 확인 (다른 사람이 열어둔 화면에서 함부로 바꾸지 못하도록)
+      const { error: e1 } = await db.auth.signInWithPassword({ email: user.email, password: cur });
+      if (e1) return alert('현재 비밀번호가 맞지 않습니다.');
+      const { error: e2 } = await db.auth.updateUser({ password: nw });
+      if (e2) {
+        const m = e2.message || '';
+        return alert(/weak|characters|least/i.test(m) ? `비밀번호가 Supabase 보안 기준에 맞지 않습니다. 더 길거나 복잡하게 정해주세요.\n(${m})`
+          : /same|different/i.test(m) ? '새 비밀번호가 현재 비밀번호와 같습니다.'
+          : `비밀번호를 바꾸지 못했습니다: ${m}`);
+      }
+      closePwBox();
+      alert('비밀번호가 변경되었습니다. 다음 로그인부터 새 비밀번호를 사용하세요.');
+    } finally { btn.disabled = false; btn.textContent = '변경하기'; }
+  });
 
   /* ---- 명단 ---- */
   async function loadReservations() {
