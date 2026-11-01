@@ -129,6 +129,9 @@
         </div>
       </div>
 
+      <!-- 담당 산악회 업무 영역: 담당 산악회가 없는 계정에는 표시하지 않음 -->
+      <div id="adminWork" class="space-y-6">
+
       <div class="card">
         <div class="flex justify-between items-center gap-2 mb-3">
           <h2 class="text-lg font-bold">신청자 명단과 입금 확인</h2>
@@ -268,6 +271,7 @@
           <p class="text-xs text-gray-500">삭제하면 산행, 좌석, 지난 신청 내역, 공지 후보, 담당자 지정이 모두 함께 삭제되고 되돌릴 수 없습니다. 신청·확정된 예약이 있는 산악회는 삭제되지 않으니 예약을 먼저 취소하세요.</p>
         </div>
       </div>
+      </div><!-- /adminWork -->
     </div>
   </section>
 </div>
@@ -580,10 +584,18 @@ async function loadSeats(quiet = false) {
     const r = await db.rpc('my_access'); access = r.data || { super: false, clubs: [] };
     const none = !access.super && !access.clubs.length;
     const who = data.session.user?.email ? ` (${data.session.user.email})` : '';
-    $('whoami').textContent = (access.super ? '총괄 관리자' + who : none ? '' : '산악회 담당자' + who) || '담당 산악회가 없는 계정입니다. 총괄 관리자에게 지정을 요청하세요.';
-    if (none) return;
+    if (none) {
+      clubs = []; resRows = []; adminTrips = []; candidates = [];
+      $('whoami').textContent = '담당 산악회가 없는 계정입니다. 총괄 관리자에게 지정을 요청하세요.' + who;
+      $('adminWork').classList.add('hidden'); return;
+    }
+    $('adminWork').classList.remove('hidden');
     const all = (await db.from('clubs').select('*').order('name')).data || [];
     clubs = access.super ? all : all.filter((c) => access.clubs.includes(c.id));
+    $('whoami').textContent = access.super ? '총괄 관리자' + who : `${clubs.map((c) => c.name).join(', ')} 담당자${who}`;
+    // 담당 산악회가 하나뿐이면 산악회 선택칸을 그 산악회로 고정
+    const single = clubs.length === 1;
+    ['resClub', 'infoClub', 'newClub'].forEach((id) => { $(id).disabled = single; });
     $('newClub').innerHTML = opts(clubs.map((c) => [c.id, c.name]));
     $('infoClub').innerHTML = opts(clubs.map((c) => [c.id, c.name])); fillClubInfo();
     $('superBox').classList.toggle('hidden', !access.super);
@@ -638,7 +650,8 @@ async function loadSeats(quiet = false) {
   async function loadReservations() {
     const { data, error } = await db.from('reservations').select('*, buses(bus_no, vehicle_type, trips(id, title, trip_date, pay_mode, club_id, clubs(name)))').order('created_at', { ascending: false });
     if (error) { $('resTable').innerHTML = `<tr><td colspan="10" class="px-3 py-3 text-red-600">${esc(error.message)}</td></tr>`; return; }
-    resRows = data; renderReservations(); renderAdminSeatBusOptions();
+    const mine = new Set(clubs.map((c) => c.id));
+    resRows = data.filter((r) => mine.has(r.buses?.trips?.club_id)); renderReservations(); renderAdminSeatBusOptions();
   }
   function resFiltered() {
     const c = $('resClub').value, t = $('resTrip').value, st = $('resStatus').value, sort = $('resSort').value;
@@ -656,7 +669,7 @@ async function loadSeats(quiet = false) {
   function fillResFilters() {
     const keep = $('resClub').value;
     $('resClub').innerHTML = opts(clubs.map((c) => [c.id, c.name]), '전체 산악회');
-    $('resClub').value = clubs.some((c) => String(c.id) === keep) ? keep : '';
+    $('resClub').value = clubs.length === 1 ? String(clubs[0].id) : clubs.some((c) => String(c.id) === keep) ? keep : '';
     fillResTrips();
   }
   function fillResTrips() {
@@ -996,7 +1009,7 @@ async function loadSeats(quiet = false) {
 
   /* ---- 카페 검색 결과(산행 공지 후보) ---- */
   async function loadCandidates() {
-    const { data, error } = await db.from('trip_candidates').select('*, clubs(name)')
+    const { data, error } = await db.from('trip_candidates').select('*, clubs(name)').in('club_id', clubs.map((c) => c.id))
       .order('posted_at', { ascending: false, nullsFirst: false }).limit(300);
     candidates = error ? [] : data || [];
     renderCandidates(error);
